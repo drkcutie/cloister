@@ -146,7 +146,7 @@ pub fn schedule_plan(state: &State, date: NaiveDate) -> Option<DayPlan> {
 
 fn schedule_plan_of(schedule: &Schedule, date: NaiveDate) -> Option<DayPlan> {
     let tz: Tz = schedule.time_zone.parse().ok()?;
-    let at = |hhmm: &str| local(tz, date, parse_hhmm(hhmm)?);
+    let at = |hhmm: &str| local_instant(tz, date, parse_hhmm(hhmm)?);
     let slots = schedule
         .slots
         .iter()
@@ -173,7 +173,7 @@ fn schedule_plan_of(schedule: &Schedule, date: NaiveDate) -> Option<DayPlan> {
 
 /// Local wall time to UTC. An ambiguous time takes the earlier instant; a time skipped by a
 /// clock change moves an hour later.
-pub(crate) fn local(tz: Tz, date: NaiveDate, time: NaiveTime) -> Option<DateTime<Utc>> {
+pub(crate) fn local_instant(tz: Tz, date: NaiveDate, time: NaiveTime) -> Option<DateTime<Utc>> {
     let naive = date.and_time(time);
     tz.from_local_datetime(&naive)
         .earliest()

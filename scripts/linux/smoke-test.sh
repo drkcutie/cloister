@@ -113,7 +113,7 @@ check "after restarting the service"
 echo "== trying to cancel over IPC (must be refused)"
 id=$("$CLI" status | sed -n 's/^Block \(blk-[^ ]*\) ends.*/\1/p' | head -1)
 reply=$(ipc "{\"request\":\"command\",\"command\":{\"type\":\"cancel_block\",\"block_id\":\"$id\"}}")
-case $reply in *loosening_not_accepted*) pass "IPC refused cancel_block" ;; *) fail "IPC replied: $reply" ;; esac
+case $reply in *block_cannot_be_cancelled*) pass "IPC refused cancel_block" ;; *) fail "IPC replied: $reply" ;; esac
 
 echo "== app blocker: a copy of sleep named SmokeApp stands in for a blocked app"
 sleep_bin=$(readlink -f "$(command -v sleep)")

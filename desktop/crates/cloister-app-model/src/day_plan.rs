@@ -335,21 +335,18 @@ impl Notice {
         now: DateTime<Utc>,
         zone: &Zone,
     ) -> Self {
-        Notice::what_is_so(match code {
-            "slot_cannot_be_removed" => "This Slot can be moved, not removed.".to_string(),
-            "deep_session_has_started" => match started_end {
-                Some(t) => format!("Ends at {}. Can't be changed.", clock(t, zone)),
-                None => "This Deep Session has started. It can't be changed.".into(),
+        // The same code means something else when starting a Deep Session.
+        if code == "rest_day" {
+            return Notice::what_is_so("A Rest Day has no Day Plan.");
+        }
+        Notice::refused(
+            code,
+            &cloister_core::Details {
+                ends_at: started_end.map(|t| clock(t, zone)),
+                earliest: Some(clock(now, zone)),
+                ..cloister_core::Details::default()
             },
-            "slot_in_the_past" => {
-                format!("Deep Slots start at {} at the earliest.", clock(now, zone))
-            }
-            "slots_overlap" => "Two Slots overlap. Move one.".into(),
-            "invalid_slot" => "Every Slot needs a label and a time inside the Workday.".into(),
-            "invalid_day_plan" => "The Workday runs from Workday Start to Shutdown Time.".into(),
-            "rest_day" => "A Rest Day has no Day Plan.".into(),
-            other => return Notice::refusal(other, None, zone),
-        })
+        )
     }
 }
 

@@ -33,8 +33,8 @@ impl Zone {
 /// "11:00": a time of day in `zone`, 24-hour.
 pub fn clock(t: DateTime<Utc>, zone: &Zone) -> String {
     match zone {
-        Zone::Local => t.with_timezone(&Local).format("%H:%M").to_string(),
-        Zone::Utc => t.format("%H:%M").to_string(),
+        Zone::Local => cloister_core::hhmm(&t.with_timezone(&Local)),
+        Zone::Utc => cloister_core::hhmm(&t),
     }
 }
 

@@ -146,39 +146,16 @@ fn run(args: &[String]) -> Result<(), String> {
     }
 }
 
+/// The one copy map's sentence for `code`, with the code for the developer.
 fn explain(code: &str) -> String {
-    let text = match code {
-        "invalid_length" => "A Block needs a length of at least one minute.",
-        "block_too_long" => "Blocks are at most 24 hours.",
-        "confirmation_required" => {
-            "Blocks over 4 hours can't be undone. Add --confirm-long to commit."
-        }
-        "block_cannot_be_shortened" => "A Block can be extended, not shortened.",
-        "block_cannot_be_cancelled" | "loosening_not_accepted" => "A Block can't be cancelled.",
-        "block_has_ended" => "That Block has already ended.",
-        "unknown_block" => "No Block has that id.",
-        "unknown_blocklist" => "No Blocklist has that id.",
-        "duplicate_block" => "A Block with that id already exists.",
-        "not_a_deep_session" => "Only a Deep Session has a Depth Rating.",
-        "deep_session_not_ended" => "The Deep Session hasn't ended yet. Rate it then.",
-        "invalid_depth_rating" => "A Depth Rating is 1 to 5.",
-        "depth_rating_already_recorded" => "This Depth Rating is already recorded.",
-        "invalid_entry" => "That isn't a domain (like example.com) or an app name.",
-        "unknown_entry" => "That Blocklist doesn't hold this entry.",
-        "cannot_opt_out" => "Only Distraction List categories can be switched off.",
-        "evening_lockdown" => "Evening Lockdown. Deep Sessions start again at Workday Start.",
-        "rest_day" => "A Rest Day. Deep Sessions start again on the next Workday.",
-        _ => "",
-    };
-    if text.is_empty() {
-        format!("Not accepted ({code}).")
-    } else {
-        format!("{text} ({code})")
-    }
+    format!(
+        "{} ({code})",
+        cloister_core::Refusal::copy_for(code, &cloister_core::Details::default())
+    )
 }
 
 fn local(t: DateTime<Utc>) -> String {
-    t.with_timezone(&Local).format("%H:%M").to_string()
+    cloister_core::hhmm(&t.with_timezone(&Local))
 }
 
 fn new_block_id() -> String {

@@ -11,6 +11,7 @@
 mod blocklists;
 mod catalog;
 mod day_plan;
+mod refusal;
 mod review;
 mod ritual;
 mod settings;
@@ -30,6 +31,7 @@ pub use day_plan::{
     day_plan, planned_deep_minutes, planned_deep_sessions, schedule_plan, DayPlan, Schedule,
     ScheduleSlot, Slot, SlotInput,
 };
+pub use refusal::{Details, Refusal, NOTHING_CHANGED};
 pub use review::{
     is_last_workday_of_week, next_week_boundary, week_start, week_summary, weekly_target_at,
     PendingWeeklyTarget, WeekSummary, WeeklyTarget, DEPTH_TREND_LENGTH, WEEKLY_TARGET_HOURS,
@@ -43,6 +45,15 @@ pub use settings::{
     lockdown, next_workday_start, settings_at, workday, Lockdown, PastSettings, PendingSettings,
     Settings, Workday,
 };
+
+/// "11:00": the time of day of `t` in its own time zone, 24-hour. Every desktop surface writes
+/// times this way (convert to the reader's zone first).
+pub fn hhmm<Tz: chrono::TimeZone>(t: &DateTime<Tz>) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
+    t.format("%H:%M").to_string()
+}
 
 /// Everything the engine knows. Grows as later rules arrive (Day Plans, settings, rituals...).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

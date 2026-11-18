@@ -325,7 +325,7 @@ fn status(device: &Device) -> Result<(), String> {
         println!(
             "{} until {}. Can't be cancelled.",
             if b.deep { "Deep Session" } else { "Block" },
-            b.ends_at.with_timezone(&chrono::Local).format("%H:%M")
+            cloister_core::hhmm(&b.ends_at.with_timezone(&chrono::Local))
         );
     }
     Ok(())

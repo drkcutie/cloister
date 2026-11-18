@@ -353,9 +353,6 @@ impl<R: Rules> Blocklists<R> {
         self.refresh();
         match result? {
             Ok(()) => Ok(()),
-            Err(reason) if reason == "loosening_not_accepted" => Err(Notice::what_is_so(
-                "Removals go through your account and take effect tomorrow. Sign in on this Device to make one.",
-            )),
             Err(reason) => Err(Notice::refusal(&reason, None, &self.zone)),
         }
     }

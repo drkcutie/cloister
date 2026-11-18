@@ -186,7 +186,9 @@ fn a_site_added_to_the_work_list_is_blocked_at_once_through_the_local_service() 
         .remove("social", EntryKind::Domain, "lemmy.world")
         .unwrap_err();
     assert!(
-        refused.text.starts_with("Removals go through your account"),
+        refused
+            .text
+            .starts_with("This goes through your account and takes effect tomorrow"),
         "{}",
         refused.text
     );

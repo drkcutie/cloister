@@ -239,11 +239,5 @@ pub fn pending_changes(state: &State, now: DateTime<Utc>, zone: &Zone) -> Vec<St
 }
 
 fn refusal(code: &str) -> Notice {
-    Notice::what_is_so(match code {
-        "invalid_settings" => "Workday Start comes before Shutdown Time.",
-        "unknown_time_zone" => "That time zone isn't known. Use a name like Europe/Paris.",
-        "time_zone_cannot_change" => "The time zone is set with the first settings.",
-        "invalid_weekly_target" => "A weekly target is 1 to 100 Deep Hours.",
-        _ => "The settings stay as they are.",
-    })
+    Notice::refused(code, &cloister_core::Details::default())
 }

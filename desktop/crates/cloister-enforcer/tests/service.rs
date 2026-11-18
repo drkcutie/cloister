@@ -240,7 +240,7 @@ fn nothing_over_ipc_can_end_or_shorten_a_block() {
     assert_eq!(
         cancel,
         Response::Rejected {
-            reason: "loosening_not_accepted".into()
+            reason: "block_cannot_be_cancelled".into()
         }
     );
 
@@ -455,7 +455,7 @@ fn blocklist_additions_apply_at_once_over_ipc_but_loosening_is_refused() {
         assert_eq!(
             send(&r, loosening),
             Response::Rejected {
-                reason: "loosening_not_accepted".into()
+                reason: "takes_effect_tomorrow".into()
             }
         );
     }
@@ -1038,7 +1038,7 @@ fn nothing_over_ipc_can_complete_or_delay_the_ritual() {
         assert_eq!(
             send(&r, command),
             Response::Rejected {
-                reason: "loosening_not_accepted".into()
+                reason: "account_required".into()
             }
         );
     }

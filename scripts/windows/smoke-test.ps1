@@ -97,7 +97,7 @@ $status = & $Cli status
 $id = ($status | Select-String -Pattern '^Block (blk-\S+) ends').Matches | Select-Object -First 1 | ForEach-Object { $_.Groups[1].Value }
 $reply = Ipc "{`"request`":`"command`",`"command`":{`"type`":`"cancel_block`",`"block_id`":`"$id`"}}"
 if ($null -eq $reply) { Write-Host '  skip  needs PowerShell 7 for AF_UNIX' }
-elseif ($reply -like '*loosening_not_accepted*') { Pass 'IPC refused cancel_block' } else { Fail "IPC replied: $reply" }
+elseif ($reply -like '*block_cannot_be_cancelled*') { Pass 'IPC refused cancel_block' } else { Fail "IPC replied: $reply" }
 
 Write-Host '== app blocker: a copy of PING.EXE named SmokeApp stands in for a blocked app'
 $app = "$env:TEMP\SmokeApp.exe"

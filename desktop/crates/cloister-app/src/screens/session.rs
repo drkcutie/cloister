@@ -147,7 +147,7 @@ pub fn render(
                 .border_color(p.line)
                 .child(ui::status(
                     &p,
-                    "Distraction List blocked on this Mac",
+                    "Distraction List blocked on this Device",
                     view.reachable,
                 ))
                 .child(

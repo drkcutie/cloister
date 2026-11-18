@@ -68,7 +68,7 @@ check "after restarting the service"
 echo "== trying to cancel over IPC (must be refused)"
 id=$("$CLI" status | sed -n 's/^Block \(blk-[^ ]*\) ends.*/\1/p' | head -1)
 reply=$(echo "{\"request\":\"command\",\"command\":{\"type\":\"cancel_block\",\"block_id\":\"$id\"}}" | nc -U /var/run/cloister.sock)
-if [[ $reply == *loosening_not_accepted* ]]; then pass "IPC refused cancel_block"; else fail "IPC replied: $reply"; fi
+if [[ $reply == *block_cannot_be_cancelled* ]]; then pass "IPC refused cancel_block"; else fail "IPC replied: $reply"; fi
 
 echo "== app blocker: Calculator stands in for a blocked app"
 # Calculator is an Apple app, which is never quit, so block a copy with its own bundle id.

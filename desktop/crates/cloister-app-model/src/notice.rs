@@ -2,6 +2,7 @@
 //! ends or takes effect. No "sorry", "oops", "error" or "not allowed"; full stops only.
 
 use chrono::{DateTime, Utc};
+use cloister_core::{Details, Refusal};
 
 use crate::format::{clock, day, Zone};
 
@@ -36,53 +37,30 @@ impl Notice {
 
     pub fn unreachable() -> Self {
         Self::what_is_so(
-            "The enforcement service isn't running on this Mac. Blocks start once it is.",
+            "The enforcement service isn't running on this Device. Blocks start once it is.",
         )
     }
 
-    /// The notice for a rejection `code` from the service. `ends_at` is the end of the
-    /// Block the refusal is about, when there is one (for Evening Lockdown and Rest Days: the
-    /// next Workday Start).
+    /// The notice for a rejection `code` (from the service or the backend), from the one
+    /// copy map ([`Refusal`]). `ends_at` is the end of the Block the refusal is about, when
+    /// there is one (for Evening Lockdown and Rest Days: the next Workday Start). A code no
+    /// layer gives gets calm generic copy; the code goes to the log, never on screen.
     pub fn refusal(code: &str, ends_at: Option<DateTime<Utc>>, zone: &Zone) -> Self {
-        let ends = |then: &str| match ends_at {
-            Some(t) => format!("Ends at {}. {then}", clock(t, zone)),
-            None => then.to_string(),
-        };
-        Self::what_is_so(match code {
-            "block_cannot_be_cancelled"
-            | "block_cannot_be_shortened"
-            | "loosening_not_accepted" => ends("Can't be cancelled."),
-            "deep_session_not_ended" => ends("Rate it then."),
-            "confirmation_required" => {
-                "Blocks over 4 hours need the confirmation that they can't be undone.".into()
-            }
-            "block_too_long" => "Blocks are 24 hours at most.".into(),
-            "invalid_length" => "Choose a length.".into(),
-            "depth_rating_already_recorded" => "This Depth Rating is already recorded.".into(),
-            "storage_unavailable" => "The Block wasn't saved, so it hasn't started.".into(),
-            "invalid_entry" => "Enter a domain, like example.com, or an app name.".into(),
-            "unknown_entry" => "That Blocklist doesn't hold this entry.".into(),
-            "cannot_opt_out" => "The Work List can be edited, not switched off.".into(),
-            "evening_lockdown" => match ends_at {
-                Some(t) => format!(
-                    "Evening Lockdown. Deep Sessions start again at {}.",
-                    clock(t, zone)
-                ),
-                None => "Evening Lockdown. Deep Sessions start again at Workday Start.".into(),
+        Self::refused(
+            code,
+            &Details {
+                ends_at: ends_at.map(|t| clock(t, zone)),
+                ends_on: ends_at.map(|t| day(t, zone)),
+                ..Details::default()
             },
-            "rest_day" => match ends_at {
-                Some(t) => format!(
-                    "A Rest Day. Deep Sessions start again {}, {}.",
-                    day(t, zone),
-                    clock(t, zone)
-                ),
-                None => "A Rest Day. Deep Sessions start again on a Workday.".into(),
-            },
-            "time_zone_cannot_change" => {
-                "The time zone is set once, with the first settings.".into()
-            }
-            "invalid_settings" => "Workday Start comes before Shutdown Time.".into(),
-            _ => "Not accepted. Nothing has changed.".into(),
-        })
+        )
+    }
+
+    /// The notice for a rejection `code` with the times it names already formatted.
+    pub fn refused(code: &str, details: &Details) -> Self {
+        if Refusal::from_code(code).is_none() {
+            eprintln!("cloister: refused with an unknown code: {code}");
+        }
+        Self::what_is_so(Refusal::copy_for(code, details))
     }
 }

@@ -315,22 +315,13 @@ impl RitualFlow {
                 _ => None,
             }
         });
-        Notice::what_is_so(match code {
-            "loose_end_required" => "Capture at least one Loose End.".to_string(),
-            "invalid_loose_end" => "A Loose End needs a few words, 500 characters at most.".into(),
-            "day_plan_required" => "Save tomorrow's Day Plan.".into(),
-            "deep_slot_required" => "Tomorrow needs at least one deep Slot.".into(),
-            "workday_not_covered" => match bounds {
-                Some(b) => format!("Cover the whole Workday with Slots, {b}."),
-                None => "Cover the whole Workday with Slots.".into(),
+        Notice::refused(
+            code,
+            &cloister_core::Details {
+                workday: bounds,
+                ..cloister_core::Details::default()
             },
-            "confirmation_mismatch" => format!("Type \"{SHUTDOWN_COMPLETE}\" exactly."),
-            "ritual_not_due" => "No Shutdown Ritual is due.".into(),
-            "ritual_already_completed" => "Shutdown is already complete.".into(),
-            "weekly_review_required" => "Set next week's target.".into(),
-            "invalid_weekly_target" => "A weekly target is 1 to 100 Deep Hours.".into(),
-            other => return Notice::refusal(other, None, &self.zone),
-        })
+        )
     }
 
     fn span(&self, a: DateTime<Utc>, b: DateTime<Utc>) -> String {
@@ -424,18 +415,9 @@ pub fn use_shutdown_delay(backend: &impl PlanBackend, zone: &Zone) -> Notice {
             Some(t) => Notice::recorded(format!("Shutdown delayed to {}. Logged.", clock(t, zone))),
             None => Notice::recorded("Shutdown delayed by 30 minutes. Logged."),
         },
-        Ok(Some(code)) if code == "shutdown_delay_used" => {
-            Notice::what_is_so("No Shutdown Delay left this week.")
-        }
         Ok(Some(code)) if code == "evening_lockdown" || code == "rest_day" => Notice::what_is_so(
             "A Shutdown Delay is used on a Workday, until 30 minutes after Shutdown Time.",
         ),
-        Ok(Some(code)) if code == "ritual_already_completed" => {
-            Notice::what_is_so("Shutdown is already complete. The evening stands.")
-        }
-        Ok(Some(code)) if code == "no_shutdown_time" => {
-            Notice::what_is_so("Set a Shutdown Time first.")
-        }
         Ok(Some(code)) => Notice::refusal(&code, None, zone),
         Err(_) => Notice::what_is_so("The backend can't be reached. Shutdown Time stands."),
     }

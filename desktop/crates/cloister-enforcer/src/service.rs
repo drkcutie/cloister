@@ -8,8 +8,8 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use cloister_core::{
     decide, enforcement, lockdown, next_workday_start, settings_at, shutdown_delays_left,
-    shutdown_ritual_at, Block, BlocklistEdits, Command, Enforcement, Outcome, RitualScreen, State,
-    MAX_BLOCK, QUIT_SOCIAL_BLOCK,
+    shutdown_ritual_at, Block, BlocklistEdits, Command, Enforcement, Outcome, Reason, Refusal,
+    RitualScreen, State, MAX_BLOCK, QUIT_SOCIAL_BLOCK,
 };
 
 use crate::account::{AccountLink, Fetched};
@@ -45,12 +45,11 @@ pub trait Clock: Send {
     fn checkpoint(&mut self) {}
 }
 
-/// Rejection code for commands the service never accepts over IPC.
-pub const LOOSENING_NOT_ACCEPTED: &str = "loosening_not_accepted";
-/// Rejection code for a synced Block that no rule could have produced.
-pub const INVALID_BLOCK: &str = "invalid_block";
-/// Rejection code when an accepted command couldn't be saved.
-pub const STORAGE_UNAVAILABLE: &str = "storage_unavailable";
+fn rejected(refusal: Refusal) -> Response {
+    Response::Rejected {
+        reason: refusal.code().into(),
+    }
+}
 
 pub struct Service<P, C> {
     store: StateStore,
@@ -168,9 +167,7 @@ impl<P: Platform, C: Clock> Service<P, C> {
         access_token: Option<String>,
     ) -> Response {
         let Some(mut merged) = merge_blocks(&self.state, &blocks) else {
-            return Response::Rejected {
-                reason: INVALID_BLOCK.into(),
-            };
+            return rejected(Refusal::InvalidBlock);
         };
         let news = blocklists
             .as_ref()
@@ -193,9 +190,7 @@ impl<P: Platform, C: Clock> Service<P, C> {
         if merged != self.state {
             if let Err(e) = self.store.save(&merged) {
                 eprintln!("cloisterd: saving state failed: {e}");
-                return Response::Rejected {
-                    reason: STORAGE_UNAVAILABLE.into(),
-                };
+                return rejected(Refusal::StorageUnavailable);
             }
             self.state = merged;
         }
@@ -205,10 +200,8 @@ impl<P: Platform, C: Clock> Service<P, C> {
     }
 
     fn command(&mut self, command: Command) -> Response {
-        if !tightens(&command) {
-            return Response::Rejected {
-                reason: LOOSENING_NOT_ACCEPTED.into(),
-            };
+        if let Some(refusal) = not_taken_here(&command) {
+            return rejected(refusal);
         }
         let decision = decide(&self.state, &command, self.clock.now());
         match decision.outcome {
@@ -218,9 +211,7 @@ impl<P: Platform, C: Clock> Service<P, C> {
             Outcome::Accepted => {
                 if let Err(e) = self.store.save(&decision.state) {
                     eprintln!("cloisterd: saving state failed: {e}");
-                    return Response::Rejected {
-                        reason: STORAGE_UNAVAILABLE.into(),
-                    };
+                    return rejected(Refusal::StorageUnavailable);
                 }
                 self.state = decision.state;
                 Response::Accepted {
@@ -233,8 +224,8 @@ impl<P: Platform, C: Clock> Service<P, C> {
 
 /// Only commands that can't loosen enforcement are accepted locally: those that make it
 /// stricter, and records such as a Depth Rating that don't touch it. Anything that could
-/// loosen it goes through the backend, which applies it tomorrow (ADR 0001).
-fn tightens(command: &Command) -> bool {
+/// loosen it goes through the backend (ADR 0001, 0004): this says why it isn't taken here.
+fn not_taken_here(command: &Command) -> Option<Refusal> {
     match command {
         Command::StartBlock { .. }
         | Command::ExtendBlock { .. }
@@ -242,23 +233,23 @@ fn tightens(command: &Command) -> bool {
         | Command::RecordBreach { .. }
         | Command::StartQuitSocialBlock { .. }
         | Command::AddBlocklistEntry { .. }
-        | Command::OptInToBlocklist { .. } => true,
-        Command::CancelBlock { .. }
-        | Command::RemoveBlocklistEntry { .. }
-        | Command::OptOutOfBlocklist { .. } => false,
-        // Moving a deep Slot or changing a Schedule can loosen today: the backend decides.
-        // Settings can loosen tomorrow; the backend decides and the Sync hands them over.
-        Command::WriteDayPlan { .. }
+        | Command::OptInToBlocklist { .. }
+        | Command::CaptureLooseEnd { .. } => None,
+        // Nowhere: a Block can't be cancelled.
+        Command::CancelBlock { .. } => Some(Refusal::Rule(Reason::BlockCannotBeCancelled)),
+        // A removal, opt-out or settings change loosens from tomorrow; moving a deep Slot or
+        // changing a Schedule can loosen too. The weekly target lives in the account only.
+        Command::RemoveBlocklistEntry { .. }
+        | Command::OptOutOfBlocklist { .. }
+        | Command::WriteDayPlan { .. }
         | Command::PutSchedule { .. }
-        | Command::ChangeSettings { .. } => false,
-        // The weekly target changes nothing a Device enforces: it lives in the account only.
-        Command::SetWeeklyTarget { .. } => false,
-        // A Loose End is a record. A Shutdown Delay or a completed ritual lifts enforcement:
-        // the backend decides and the Sync hands the record over (merge_ritual_records).
-        Command::CaptureLooseEnd { .. } => true,
+        | Command::ChangeSettings { .. }
+        | Command::SetWeeklyTarget { .. } => Some(Refusal::TakesEffectTomorrow),
+        // A Shutdown Delay or a completed ritual lifts enforcement: the backend decides and
+        // the service fetches the record from it.
         Command::CloseLooseEnd { .. }
         | Command::UseShutdownDelay {}
-        | Command::CompleteRitual { .. } => false,
+        | Command::CompleteRitual { .. } => Some(Refusal::AccountRequired),
     }
 }
 

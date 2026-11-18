@@ -15,7 +15,7 @@ use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveTime, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
-use crate::day_plan::{local, parse_hhmm};
+use crate::day_plan::{local_instant, parse_hhmm};
 use crate::{next_day_boundary, Reason, State};
 
 /// The account's Workdays and Workday bounds. Times are local "HH:MM" in the state's
@@ -170,7 +170,7 @@ pub fn lockdown(state: &State, at: DateTime<Utc>) -> Option<Lockdown> {
 
 /// The start of local `date` in the account's time zone.
 fn day_start(state: &State, date: NaiveDate) -> DateTime<Utc> {
-    local(time_zone(state), date, NaiveTime::MIN)
+    local_instant(time_zone(state), date, NaiveTime::MIN)
         .unwrap_or_else(|| date.and_time(NaiveTime::MIN).and_utc())
 }
 
@@ -205,7 +205,10 @@ pub fn workday(state: &State, date: NaiveDate, now: DateTime<Utc>) -> Workday {
     }
     let tz = time_zone(state);
     let (start, shutdown) = settings.times();
-    match (local(tz, date, start), local(tz, date, shutdown)) {
+    match (
+        local_instant(tz, date, start),
+        local_instant(tz, date, shutdown),
+    ) {
         (Some(a), Some(b)) => Workday::Bounds(a, b),
         _ => Workday::RestDay,
     }

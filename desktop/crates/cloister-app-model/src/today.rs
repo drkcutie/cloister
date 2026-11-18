@@ -107,7 +107,7 @@ impl<E: Enforcer> Today<E> {
         }
     }
 
-    /// Show times in `zone` instead of this Mac's local time.
+    /// Show times in `zone` instead of this Device's local time.
     pub fn in_zone(mut self, zone: Zone) -> Self {
         self.zone = zone;
         self

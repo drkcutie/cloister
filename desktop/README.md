@@ -42,17 +42,26 @@ adobe-fonts, static instances).
 1. Loads the state from `/Library/Application Support/Cloister/state.json`.
 2. Runs the DNS filter on `127.0.0.1:53`, forwarding allowed names to `1.1.1.1` / `9.9.9.9`
    (`--upstream` to change). Blocked domains, their subdomains and related domains get NXDOMAIN.
-3. Serves IPC on `/var/run/cloister.sock` (JSON lines). Only commands that tighten
-   enforcement (`start_block`, `extend_block`) are accepted; anything else is refused with
-   `loosening_not_accepted`. There is no request that sets state.
+3. Serves IPC on `/var/run/cloister.sock` (JSON lines), open to local users. Only commands that
+   tighten enforcement (`start_block`, `extend_block`, Blocklist additions...) are accepted;
+   `cancel_block` is `block_cannot_be_cancelled`, loosening changes `takes_effect_tomorrow`, and
+   ritual completion, Shutdown Delays and closing Loose Ends `account_required`. A `sync` request
+   only tightens. Whatever lifts enforcement (completed rituals, Shutdown Delays, pending settings,
+   Blocklist removals and opt-outs, Schedule changes) and server time are fetched by cloisterd
+   itself from the backend, with the access token the signed-in Device hands over in `sync`; the
+   first account seen is pinned in `account.json` next to the state. The backend comes from
+   `--backend/--anon-key`, `CLOISTER_API_URL`/`CLOISTER_ANON_KEY`, `backend.json` next to the state,
+   or the same variables at build time.
 4. Every 5 seconds asks the rules engine for the Enforcement and re-applies it: every network
    service's DNS -> `127.0.0.1`, the `pf` anchor `com.apple/cloister` (DNS/DoT only to the
    filter, resolved IPs of blocked domains dropped), and a marked section in `/etc/hosts`.
 
-Time: until sync supplies server time, the service trusts the wall clock only as far as a
-monotonic clock (which keeps counting through sleep) allows, so moving the clock forward
-doesn't end a Block while the service runs. A clock moved forward while the Mac is off is
-not detected yet; server time from the backend closes that gap.
+Time: the service keeps a trusted clock in `clock.json`: the last server time plus monotonic
+time (which keeps counting through sleep), saved every 30 seconds. The wall clock never moves
+it, so setting it back can't lift Evening Lockdown and setting it forward can't end a Block,
+also across a reboot (then the trusted time continues from the saved time plus the uptime).
+Enforcement also applies what is due at the wall clock when it is later, so a Mac that was off
+still enters Evening Lockdown; that can only add.
 
 Known limits (SelfControl-level, ADR 0002): DNS-over-HTTPS in browsers that ignore system DNS,
 VPNs and proxies are not blocked. Firefox's DoH is switched off via its canary domain.
