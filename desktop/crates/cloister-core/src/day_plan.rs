@@ -429,6 +429,64 @@ pub(crate) fn put_schedule(
     Ok(())
 }
 
+/// Deep minutes of `slots` still to come after `now` (a running Slot counts its remainder).
+fn deep_minutes_after(slots: &[Slot], now: DateTime<Utc>) -> i64 {
+    slots
+        .iter()
+        .filter(|s| s.deep && s.ends_at > now)
+        .map(|s| (s.ends_at - s.starts_at.max(now)).num_seconds())
+        .sum::<i64>()
+        / 60
+}
+
+impl State {
+    /// Fold in a Day Plan from the backend at `now`, as an enforcement service that only
+    /// tightens must: the plan is taken only if every deep Slot that has started is kept
+    /// unchanged, Planned Deep Minutes don't go down and the deep time still to come doesn't
+    /// shrink (so no deep Slot is moved into the past). Known Depth Ratings stay. Returns
+    /// whether the plan was taken.
+    pub fn merge_day_plan(&mut self, incoming: &DayPlan, now: DateTime<Utc>) -> bool {
+        let mut plan = incoming.clone();
+        plan.slots
+            .sort_by(|a, b| (a.starts_at, &a.id).cmp(&(b.starts_at, &b.id)));
+        plan.planned_deep_minutes = planned_deep_minutes(&plan.slots);
+        if let Some(old) = plan_in_force(self, plan.date, now) {
+            let kept = |o: &Slot| {
+                plan.slots.iter().any(|s| {
+                    s.id == o.id && s.starts_at == o.starts_at && s.ends_at == o.ends_at && s.deep
+                })
+            };
+            if old
+                .slots
+                .iter()
+                .any(|o| o.deep && o.starts_at <= now && !kept(o))
+                || plan.planned_deep_minutes < old.planned_deep_minutes
+                || deep_minutes_after(&plan.slots, now) < deep_minutes_after(&old.slots, now)
+            {
+                return false;
+            }
+            for slot in &mut plan.slots {
+                if slot.depth_rating.is_none() {
+                    slot.depth_rating = old
+                        .slots
+                        .iter()
+                        .find(|o| o.id == slot.id)
+                        .and_then(|o| o.depth_rating);
+                }
+            }
+        }
+        match self.day_plans.iter_mut().find(|p| p.date == plan.date) {
+            Some(saved) if *saved == plan => return false,
+            Some(saved) => *saved = plan,
+            None => {
+                self.day_plans.push(plan);
+                self.day_plans.sort_by_key(|p| p.date);
+            }
+        }
+        true
+    }
+}
+
 /// A deep Slot of a saved Day Plan, by id (for its Depth Rating).
 pub(crate) fn find_slot<'a>(state: &'a mut State, id: &str) -> Option<&'a mut Slot> {
     state

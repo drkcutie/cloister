@@ -166,3 +166,57 @@ fn a_day_without_a_plan_or_schedule_opens_empty_on_the_default_workday() {
         "Every Slot needs a label and a time inside the Workday."
     );
 }
+
+impl Backend {
+    fn settings(self, workdays: &[u8], start: &str, shutdown: &str) -> Self {
+        let cmd = Command::ChangeSettings {
+            workdays: workdays.to_vec(),
+            workday_start: start.into(),
+            shutdown_time: shutdown.into(),
+            time_zone: None,
+        };
+        assert_eq!(self.send(&cmd).unwrap(), None);
+        *self.sent.borrow_mut() = 0;
+        self
+    }
+}
+
+#[test]
+fn the_workday_comes_from_the_settings() {
+    let backend = Backend::at("2026-01-04T20:00:00Z").settings(&[1, 2, 3, 4, 5], "08:30", "16:00");
+    let mut editor = DayPlanEditor::open(&backend, monday(), Zone::Utc);
+    assert!(!editor.is_rest_day());
+    assert_eq!(editor.starts_at(), t("2026-01-05T08:30:00Z"));
+    assert_eq!(editor.ends_at(), t("2026-01-05T16:00:00Z"));
+    let i = editor.add_slot();
+    editor.set_label(i, "Draft chapter 3");
+    editor.set_deep(i, true);
+    assert_eq!(editor.save(&backend).unwrap().kind, NoticeKind::Recorded);
+}
+
+#[test]
+fn a_schedule_draft_is_fitted_to_the_settings_workday() {
+    let backend = Backend::at("2026-01-04T20:00:00Z")
+        .weekday_schedule()
+        .settings(&[1, 2, 3, 4, 5], "08:00", "16:00");
+    let mut editor = DayPlanEditor::open(&backend, monday(), Zone::Utc);
+    assert_eq!(editor.starts_at(), t("2026-01-05T08:00:00Z"));
+    assert_eq!(editor.ends_at(), t("2026-01-05T16:00:00Z"));
+    assert_eq!(editor.slots().len(), 1);
+    assert_eq!(editor.save(&backend).unwrap().kind, NoticeKind::Recorded);
+}
+
+#[test]
+fn a_rest_day_has_no_day_plan() {
+    let backend = Backend::at("2026-01-04T20:00:00Z").settings(&[1, 2, 3, 4, 5], "09:00", "17:00");
+    let saturday: NaiveDate = "2026-01-10".parse().unwrap();
+    let mut editor = DayPlanEditor::open(&backend, saturday, Zone::Utc);
+    assert!(editor.is_rest_day());
+    let i = editor.add_slot();
+    editor.set_label(i, "Weekend push");
+    assert_eq!(
+        editor.save(&backend).unwrap().text,
+        "A Rest Day has no Day Plan."
+    );
+    assert_eq!(*backend.sent.borrow(), 0);
+}

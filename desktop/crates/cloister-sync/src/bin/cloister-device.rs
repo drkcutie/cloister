@@ -7,6 +7,7 @@
 //! cloister-device sign-in --google                          # needs Google set up (backend/README.md)
 //! cloister-device run [--enforcer SOCKET]                   # sync until stopped
 //! cloister-device start-block --minutes N [--plain] [--confirm-long] [--blocklist ID]... [--intent TEXT]
+//! cloister-device settings --workdays 1,2,3,4,5 --workday-start 09:00 --shutdown-time 17:00 [--time-zone Europe/Paris]
 //! cloister-device status
 //! cloister-device devices
 //! ```
@@ -20,7 +21,7 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
 
 use cloister_core::Command;
-use cloister_enforcer::ipc::{self, Request, Response};
+use cloister_enforcer::ipc::{self, Planning, Request, Response};
 use cloister_sync::{
     Backend, CommandOutcome, Device, DeviceInfo, LoopbackRedirect, Pkce, Platform, SyncEvent,
     SyncOptions,
@@ -30,6 +31,7 @@ const USAGE: &str = "usage:
   cloister-device sign-in (--email ADDRESS [--code CODE] | --google)
   cloister-device run [--enforcer SOCKET]
   cloister-device start-block --minutes N [--plain] [--confirm-long] [--blocklist ID]... [--intent TEXT]
+  cloister-device settings --workdays 1,2,3,4,5 --workday-start HH:MM --shutdown-time HH:MM [--time-zone IANA]
   cloister-device status
   cloister-device devices
 options: --mirror PATH  --name NAME
@@ -48,6 +50,10 @@ struct Flags {
     confirm_long: bool,
     blocklists: Vec<String>,
     intent: Option<String>,
+    workdays: Option<Vec<u8>>,
+    workday_start: Option<String>,
+    shutdown_time: Option<String>,
+    time_zone: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -84,6 +90,19 @@ fn parse(args: &[String]) -> Result<Flags, String> {
             "--confirm-long" => f.confirm_long = true,
             "--blocklist" => f.blocklists.push(value()?),
             "--intent" => f.intent = Some(value()?),
+            "--workdays" => {
+                f.workdays = Some(
+                    value()?
+                        .split(',')
+                        .filter(|d| !d.trim().is_empty())
+                        .map(|d| d.trim().parse::<u8>())
+                        .collect::<Result<_, _>>()
+                        .map_err(|_| "--workdays takes ISO weekdays, like 1,2,3,4,5")?,
+                )
+            }
+            "--workday-start" => f.workday_start = Some(value()?),
+            "--shutdown-time" => f.shutdown_time = Some(value()?),
+            "--time-zone" => f.time_zone = Some(value()?),
             other => return Err(format!("unknown option {other}\n{USAGE}")),
         }
     }
@@ -99,6 +118,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "sign-in" => sign_in(&backend, &device, &f),
         "run" => sync(&device, f.enforcer.as_deref()),
         "start-block" => start_block(&device, &f),
+        "settings" => settings(&device, &f),
         "status" => status(&device),
         "devices" => devices(&device),
         _ => Err(USAGE.into()),
@@ -200,13 +220,9 @@ fn sync(device: &Device, enforcer: Option<&std::path::Path>) -> Result<(), Strin
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
         }
         let state = device.state().map_err(|e| e.to_string())?;
-        let mut blocks = state.blocks.clone();
-        // Deep Slots that have started are Deep Sessions the service must enforce too.
-        blocks.extend(
-            device
-                .started_planned_sessions()
-                .map_err(|e| e.to_string())?,
-        );
+        // The service holds the planning too, so it starts planned Deep Sessions and Evening
+        // Lockdown on its own clock even when this process isn't running.
+        let blocks = state.blocks.clone();
         let mut enforcing = true;
         if let Some(socket) = enforcer {
             match ipc::send(
@@ -214,6 +230,7 @@ fn sync(device: &Device, enforcer: Option<&std::path::Path>) -> Result<(), Strin
                 &Request::Sync {
                     blocks,
                     blocklists: Some(state.blocklist_edits()),
+                    planning: Some(Planning::of(&state)),
                 },
             ) {
                 Ok(Response::Accepted { .. }) => {}
@@ -258,6 +275,37 @@ fn start_block(device: &Device, f: &Flags) -> Result<(), String> {
             Ok(())
         }
         CommandOutcome::Rejected { reason } => Err(format!("Not started ({reason}).")),
+    }
+}
+
+fn settings(device: &Device, f: &Flags) -> Result<(), String> {
+    let command = Command::ChangeSettings {
+        workdays: f.workdays.clone().ok_or("settings needs --workdays")?,
+        workday_start: f
+            .workday_start
+            .clone()
+            .ok_or("settings needs --workday-start")?,
+        shutdown_time: f
+            .shutdown_time
+            .clone()
+            .ok_or("settings needs --shutdown-time")?,
+        time_zone: f.time_zone.clone(),
+    };
+    match device.send(&command).map_err(|e| e.to_string())? {
+        CommandOutcome::Accepted => {
+            let state = device.state().map_err(|e| e.to_string())?;
+            match &state.pending_settings {
+                Some(p) => println!(
+                    "Saved. What tightens applies now; the rest takes effect {}.",
+                    p.effective_at
+                        .with_timezone(&chrono::Local)
+                        .format("%a %-d %b, %H:%M")
+                ),
+                None => println!("Saved. It applies now."),
+            }
+            Ok(())
+        }
+        CommandOutcome::Rejected { reason } => Err(format!("Not saved ({reason}).")),
     }
 }
 

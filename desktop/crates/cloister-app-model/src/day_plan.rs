@@ -2,7 +2,7 @@
 //! edited and saved through the backend (which applies the same rules).
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Utc};
-use cloister_core::{decide, Command, Outcome, Slot, SlotInput, State};
+use cloister_core::{decide, Command, Outcome, Slot, SlotInput, State, Workday};
 
 use crate::format::{clock, Zone};
 use crate::notice::Notice;
@@ -34,8 +34,8 @@ impl PlanBackend for cloister_sync::Device {
     }
 }
 
-/// The Workday used when a day has neither a saved Day Plan nor a Schedule. Workday Start and
-/// Shutdown Time become settings in ticket #8, which replaces this.
+/// The Workday used only before any settings exist, for a day with neither a saved Day Plan
+/// nor a Schedule. Once Workday Start and Shutdown Time are set, they give every day's bounds.
 pub const DEFAULT_WORKDAY: (u32, u32) = (9, 17);
 /// Slots move and resize in steps of this many minutes.
 pub const STEP_MINUTES: i64 = 15;
@@ -71,6 +71,7 @@ pub struct DayPlanEditor {
     in_force: Vec<Slot>,
     floor: i64,
     saved: bool,
+    rest_day: bool,
     zone: Zone,
 }
 
@@ -80,10 +81,25 @@ impl DayPlanEditor {
     pub fn open(backend: &impl PlanBackend, date: NaiveDate, zone: Zone) -> Self {
         let state = backend.state().unwrap_or_default();
         let now = backend.server_time();
+        let mut editor = Self::open_plan(&state, now, date, zone);
+        match cloister_core::workday(&state, date, now) {
+            Workday::NotConfigured => {}
+            Workday::RestDay => editor.rest_day = true,
+            // A saved plan keeps its bounds; a draft or empty day is fitted to the settings.
+            Workday::Bounds(start, end) if !editor.saved => {
+                editor.starts_at = start;
+                editor.ends_at = end;
+            }
+            Workday::Bounds(..) => {}
+        }
+        editor
+    }
+
+    fn open_plan(state: &State, now: DateTime<Utc>, date: NaiveDate, zone: Zone) -> Self {
         let saved = state.day_plans.iter().find(|p| p.date == date).cloned();
         let plan = saved
             .clone()
-            .or_else(|| cloister_core::schedule_plan(&state, date));
+            .or_else(|| cloister_core::schedule_plan(state, date));
         match plan {
             Some(plan) => {
                 let in_force = saved.is_some() || plan.starts_at <= now;
@@ -99,6 +115,7 @@ impl DayPlanEditor {
                     },
                     in_force: if in_force { plan.slots } else { vec![] },
                     saved: saved.is_some(),
+                    rest_day: false,
                     zone,
                 }
             }
@@ -112,6 +129,7 @@ impl DayPlanEditor {
                     in_force: vec![],
                     floor: 0,
                     saved: false,
+                    rest_day: false,
                     zone,
                 }
             }
@@ -128,6 +146,11 @@ impl DayPlanEditor {
 
     pub fn ends_at(&self) -> DateTime<Utc> {
         self.ends_at
+    }
+
+    /// Whether this date is a Rest Day under the settings (it can't have a Day Plan).
+    pub fn is_rest_day(&self) -> bool {
+        self.rest_day
     }
 
     /// Whether this day has a saved Day Plan (otherwise it's a draft).
@@ -323,7 +346,8 @@ impl Notice {
             }
             "slots_overlap" => "Two Slots overlap. Move one.".into(),
             "invalid_slot" => "Every Slot needs a label and a time inside the Workday.".into(),
-            "invalid_day_plan" => "The Workday ends before it starts.".into(),
+            "invalid_day_plan" => "The Workday runs from Workday Start to Shutdown Time.".into(),
+            "rest_day" => "A Rest Day has no Day Plan.".into(),
             other => return Notice::refusal(other, None, zone),
         })
     }

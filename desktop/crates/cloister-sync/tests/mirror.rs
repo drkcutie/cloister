@@ -210,3 +210,34 @@ fn the_backend_is_the_authority_on_day_plans() {
     let state = mirror.state().unwrap();
     assert_eq!(state.day_plans, vec![day_plan("s2", true)]);
 }
+
+#[test]
+fn settings_from_the_backend_survive_a_restart_and_lock_down_offline_but_never_loosen_early() {
+    use cloister_core::{lockdown, Lockdown, Settings};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mirror.sqlite");
+    let nine_to_five = Settings {
+        workdays: vec![1, 2, 3, 4, 5],
+        workday_start: "09:00".into(),
+        shutdown_time: "17:00".into(),
+    };
+    let now = t("2026-01-05T18:00:00Z");
+    {
+        let mut mirror = Mirror::open(&path).unwrap();
+        assert!(mirror
+            .merge_settings("UTC", Some(&nine_to_five), None, now)
+            .unwrap());
+        // A backend answer claiming a later Shutdown Time already in force waits for tomorrow.
+        let mut later = nine_to_five.clone();
+        later.shutdown_time = "22:00".into();
+        mirror
+            .merge_settings("UTC", Some(&later), None, now)
+            .unwrap();
+    }
+    let state = Mirror::open(&path).unwrap().state().unwrap();
+    assert_eq!(lockdown(&state, now), Some(Lockdown::EveningLockdown));
+    assert!(enforcement(&state, now)
+        .blocked_domains
+        .contains(&"github.com".to_string()));
+    assert_eq!(lockdown(&state, t("2026-01-06T18:00:00Z")), None);
+}

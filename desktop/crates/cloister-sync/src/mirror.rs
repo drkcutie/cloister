@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use cloister_core::{Block, BlocklistEdits, DayPlan, Schedule, State};
+use cloister_core::{Block, BlocklistEdits, DayPlan, PendingSettings, Schedule, Settings, State};
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::Result;
@@ -12,6 +12,8 @@ const TIME_ZONE_KEY: &str = "time_zone";
 const EDITS_KEY: &str = "blocklist_edits";
 const DAY_PLANS_KEY: &str = "day_plans";
 const SCHEDULES_KEY: &str = "schedules";
+const SETTINGS_KEY: &str = "settings";
+const PENDING_SETTINGS_KEY: &str = "pending_settings";
 
 pub struct Mirror {
     db: Connection,
@@ -99,6 +101,8 @@ impl Mirror {
             blocks,
             day_plans: self.json(DAY_PLANS_KEY)?,
             schedules: self.json(SCHEDULES_KEY)?,
+            settings: self.json(SETTINGS_KEY)?,
+            pending_settings: self.json(PENDING_SETTINGS_KEY)?,
             ..State::default()
         };
         if let Some(tz) = self.get(TIME_ZONE_KEY)? {
@@ -136,6 +140,44 @@ impl Mirror {
             (
                 EDITS_KEY,
                 serde_json::to_string(&next.blocklist_edits()).expect("edits serialize"),
+            ),
+        ] {
+            tx.execute(
+                "insert into meta (key, value) values (?1, ?2)
+                 on conflict (key) do update set value = excluded.value",
+                [key, value.as_str()],
+            )?;
+        }
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// Fold the account's Workdays, Workday Start and Shutdown Time from the backend into the
+    /// mirror at `now`: stricter settings apply at once, looser ones not before the next day
+    /// boundary here (see [`State::merge_settings`]). Returns whether anything changed.
+    pub fn merge_settings(
+        &mut self,
+        time_zone: &str,
+        settings: Option<&Settings>,
+        pending: Option<&PendingSettings>,
+        now: DateTime<Utc>,
+    ) -> Result<bool> {
+        let before = self.state()?;
+        let mut next = before.clone();
+        next.merge_settings(time_zone, settings, pending, now);
+        if next == before {
+            return Ok(false);
+        }
+        let tx = self.db.transaction()?;
+        for (key, value) in [
+            (TIME_ZONE_KEY, next.time_zone.clone()),
+            (
+                SETTINGS_KEY,
+                serde_json::to_string(&next.settings).expect("settings serialize"),
+            ),
+            (
+                PENDING_SETTINGS_KEY,
+                serde_json::to_string(&next.pending_settings).expect("settings serialize"),
             ),
         ] {
             tx.execute(

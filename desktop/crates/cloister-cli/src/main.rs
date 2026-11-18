@@ -163,6 +163,8 @@ fn explain(code: &str) -> String {
         "invalid_entry" => "That isn't a domain (like example.com) or an app name.",
         "unknown_entry" => "That Blocklist doesn't hold this entry.",
         "cannot_opt_out" => "Only Distraction List categories can be switched off.",
+        "evening_lockdown" => "Evening Lockdown. Deep Sessions start again at Workday Start.",
+        "rest_day" => "A Rest Day. Deep Sessions start again on the next Workday.",
         _ => "",
     };
     if text.is_empty() {

@@ -1,10 +1,10 @@
 use chrono::{DateTime, Duration, Utc};
-use cloister_core::{Block, Command};
+use cloister_core::{Block, Command, Lockdown};
 use cloister_enforcer::ipc::{Request, Response};
 
 use crate::begin::BeginForm;
 use crate::enforcer::Enforcer;
-use crate::format::Zone;
+use crate::format::{clock, day, Zone};
 use crate::notice::Notice;
 
 /// The app's live picture of today, refreshed from the enforcement service. The service is
@@ -17,6 +17,9 @@ pub struct Today<E> {
     reachable: bool,
     /// Server time minus local time at the last refresh.
     offset: Duration,
+    /// Evening Lockdown or a Rest Day, as the service saw it at the last refresh.
+    lockdown: Option<Lockdown>,
+    next_workday_start: Option<DateTime<Utc>>,
 }
 
 /// What the screen should show now.
@@ -32,6 +35,26 @@ pub struct View {
     /// The running Quit-Social Block, if any: when it ends. It runs alongside everything
     /// else, so it is shown as a tag, never as the hero.
     pub quit_social_ends: Option<DateTime<Utc>>,
+    /// Set during Evening Lockdown and on Rest Days: the workday has ended.
+    pub ended: Option<WorkdayEnded>,
+}
+
+impl View {
+    /// Whether the app wears its Night theme: during Evening Lockdown and on Rest Days.
+    pub fn night(&self) -> bool {
+        self.ended.is_some()
+    }
+}
+
+/// The "workday has ended" screen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkdayEnded {
+    pub headline: &'static str,
+    /// A Rest Day rather than an evening.
+    pub rest_day: bool,
+    pub next_workday_start: Option<DateTime<Utc>>,
+    /// "Workday Start Tue 6 Jan, 09:00." (or a note that no Workday is set).
+    pub next_start_text: String,
 }
 
 /// The running Block (a Deep Session unless `deep` is false).
@@ -79,6 +102,8 @@ impl<E: Enforcer> Today<E> {
             blocks: vec![],
             reachable: false,
             offset: Duration::zero(),
+            lockdown: None,
+            next_workday_start: None,
         }
     }
 
@@ -99,10 +124,14 @@ impl<E: Enforcer> Today<E> {
             Ok(Response::Status {
                 server_time,
                 blocks,
+                lockdown,
+                next_workday_start,
                 ..
             }) => {
                 self.offset = server_time - local_now;
                 self.blocks = blocks;
+                self.lockdown = lockdown;
+                self.next_workday_start = next_workday_start;
                 self.reachable = true;
             }
             _ => self.reachable = false,
@@ -151,7 +180,29 @@ impl<E: Enforcer> Today<E> {
                 .filter(|b| b.quit_social && b.is_active(now))
                 .map(|b| b.ends_at)
                 .max(),
+            ended: self.ended(now),
         }
+    }
+
+    fn ended(&self, now: DateTime<Utc>) -> Option<WorkdayEnded> {
+        let lockdown = self.lockdown?;
+        // The service's answer is at most a refresh old; once Workday Start passes, it's Day.
+        if self.next_workday_start.is_some_and(|start| start <= now) {
+            return None;
+        }
+        Some(WorkdayEnded {
+            headline: "The workday has ended.",
+            rest_day: lockdown == Lockdown::RestDay,
+            next_workday_start: self.next_workday_start,
+            next_start_text: match self.next_workday_start {
+                Some(t) => format!(
+                    "Workday Start {}, {}.",
+                    day(t, &self.zone),
+                    clock(t, &self.zone)
+                ),
+                None => "No Workday is set.".into(),
+            },
+        })
     }
 
     fn deep_hours_since(&self, since: DateTime<Utc>) -> Duration {
@@ -182,7 +233,8 @@ impl<E: Enforcer> Today<E> {
             _ => return Err(Notice::what_is_so("The Block isn't ready to begin.")),
         };
         let command = form.command(new_block_id(), minutes);
-        self.send(command, None, local_now)
+        // A refusal during Evening Lockdown or a Rest Day names when work starts again.
+        self.send(command, self.next_workday_start, local_now)
     }
 
     /// Record the Depth Rating (1 to 5) of an ended Deep Session.
