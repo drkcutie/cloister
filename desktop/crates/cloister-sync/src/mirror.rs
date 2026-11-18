@@ -11,6 +11,9 @@ use crate::Result;
 const TIME_ZONE_KEY: &str = "time_zone";
 const EDITS_KEY: &str = "blocklist_edits";
 const DAY_PLANS_KEY: &str = "day_plans";
+const LOOSE_ENDS_KEY: &str = "loose_ends";
+const RITUALS_KEY: &str = "rituals";
+const SHUTDOWN_DELAYS_KEY: &str = "shutdown_delays";
 const SCHEDULES_KEY: &str = "schedules";
 const SETTINGS_KEY: &str = "settings";
 const PENDING_SETTINGS_KEY: &str = "pending_settings";
@@ -103,6 +106,9 @@ impl Mirror {
             schedules: self.json(SCHEDULES_KEY)?,
             settings: self.json(SETTINGS_KEY)?,
             pending_settings: self.json(PENDING_SETTINGS_KEY)?,
+            loose_ends: self.json(LOOSE_ENDS_KEY)?,
+            rituals: self.json(RITUALS_KEY)?,
+            shutdown_delays: self.json(SHUTDOWN_DELAYS_KEY)?,
             ..State::default()
         };
         if let Some(tz) = self.get(TIME_ZONE_KEY)? {
@@ -213,6 +219,38 @@ impl Mirror {
             }
             tx.commit()?;
         }
+        Ok(changed)
+    }
+
+    /// Take the backend's Loose Ends, completed rituals and Shutdown Delays as they are (the
+    /// backend applied the rules; an enforcement service checks them again on merge). Returns
+    /// whether anything changed.
+    pub fn replace_ritual_records(&mut self, state: &State) -> Result<bool> {
+        let values = [
+            (LOOSE_ENDS_KEY, serde_json::to_string(&state.loose_ends)),
+            (RITUALS_KEY, serde_json::to_string(&state.rituals)),
+            (
+                SHUTDOWN_DELAYS_KEY,
+                serde_json::to_string(&state.shutdown_delays),
+            ),
+        ];
+        let mut changed = false;
+        let tx = self.db.transaction()?;
+        for (key, value) in values {
+            let value = value.expect("records serialize");
+            let known: Option<String> = tx
+                .query_row("select value from meta where key = ?1", [key], |r| r.get(0))
+                .ok();
+            if known.as_deref() != Some(value.as_str()) {
+                tx.execute(
+                    "insert into meta (key, value) values (?1, ?2)
+                     on conflict (key) do update set value = excluded.value",
+                    [key, value.as_str()],
+                )?;
+                changed = true;
+            }
+        }
+        tx.commit()?;
         Ok(changed)
     }
 

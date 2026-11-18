@@ -261,7 +261,8 @@ impl Device {
                 server_now,
             )?;
             let plans_changed = mirror.replace_day_plans(&state.day_plans, &state.schedules)?;
-            blocks_changed || settings_changed || edits_changed || plans_changed
+            let ritual_changed = mirror.replace_ritual_records(&state)?;
+            blocks_changed || settings_changed || edits_changed || plans_changed || ritual_changed
         };
         if changed {
             self.emit(SyncEvent::StateChanged);

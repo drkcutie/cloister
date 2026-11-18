@@ -7,7 +7,7 @@ mod common;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use cloister_core::{Command, EntryKind};
+use cloister_core::{Command, EntryKind, RitualScreen, SlotInput};
 use cloister_sync::{
     Backend, CommandOutcome, Device, DeviceInfo, DeviceStatus, Platform, SyncOptions, SyncStatus,
 };
@@ -240,5 +240,72 @@ fn settings_changed_on_one_device_lock_down_another() {
             reason: "rest_day".into()
         }
     );
+    sync.stop();
+}
+
+fn ritual(device: &Device) -> RitualScreen {
+    device.enforcement().unwrap().ritual
+}
+
+#[test]
+#[ignore = "needs a local Supabase; run backend/scripts/test.sh"]
+fn completing_the_ritual_on_one_device_drops_it_on_another() {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = two_devices(dir.path(), "ritual");
+    // Every day a Workday from 00:00 to a minute ago (UTC), so the ritual is due now.
+    let now = a.server_time();
+    let shutdown = (now - chrono::Duration::minutes(1))
+        .format("%H:%M")
+        .to_string();
+    if shutdown.as_str() < "00:05" {
+        return; // Too close to midnight for a Workday that has ended today.
+    }
+    let settings = Command::ChangeSettings {
+        workdays: vec![1, 2, 3, 4, 5, 6, 7],
+        workday_start: "00:00".into(),
+        shutdown_time: shutdown.clone(),
+        time_zone: Some("UTC".into()),
+    };
+    assert_eq!(a.send(&settings).unwrap(), CommandOutcome::Accepted);
+    b.pull().unwrap();
+    assert_eq!(ritual(&b), RitualScreen::Due);
+    let sync = b.start_sync(realtime_only());
+    wait_until("B online", || b.sync_status() == SyncStatus::Online);
+
+    let tomorrow = now.date_naive() + chrono::Duration::days(1);
+    let at = |hhmm: &str| {
+        tomorrow
+            .and_time(chrono::NaiveTime::parse_from_str(hhmm, "%H:%M").unwrap())
+            .and_utc()
+    };
+    let steps = [
+        Command::CaptureLooseEnd {
+            loose_end_id: "l1".into(),
+            text: "Send the invoice".into(),
+        },
+        Command::WriteDayPlan {
+            date: tomorrow,
+            starts_at: at("00:00"),
+            ends_at: at(&shutdown),
+            slots: vec![SlotInput {
+                id: cloister_sync::new_block_id(),
+                starts_at: at("00:00"),
+                ends_at: at(&shutdown),
+                label: "Draft chapter 4".into(),
+                deep: true,
+            }],
+        },
+        Command::CompleteRitual {
+            typed: "Shutdown complete".into(),
+        },
+    ];
+    for step in steps {
+        assert_eq!(a.send(&step).unwrap(), CommandOutcome::Accepted, "{step:?}");
+    }
+    assert_eq!(ritual(&a), RitualScreen::Completed);
+    wait_until("B drops the ritual", || {
+        ritual(&b) == RitualScreen::Completed
+    });
+    assert_eq!(b.state().unwrap().loose_ends.len(), 1);
     sync.stop();
 }

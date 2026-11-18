@@ -13,6 +13,7 @@ mod enforcer;
 pub mod format;
 mod hold;
 mod notice;
+mod ritual;
 mod today;
 
 pub use begin::{BeginForm, Length, Missing};
@@ -26,4 +27,8 @@ pub use enforcer::{Enforcer, SocketEnforcer};
 pub use format::Zone;
 pub use hold::Hold;
 pub use notice::{Notice, NoticeKind};
+pub use ritual::{
+    deep_hours_this_week, shutdown_delay, shutdown_warning, use_shutdown_delay, DelayView, Review,
+    ReviewSession, RitualFlow, RitualStep, ShutdownWarning,
+};
 pub use today::{ActiveSession, RatingPrompt, Summary, Today, View, WorkdayEnded};

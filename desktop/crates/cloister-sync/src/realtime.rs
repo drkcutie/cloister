@@ -14,7 +14,7 @@ use crate::{Backend, Error, Result, Session};
 
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(25);
 
-const TABLES: [&str; 7] = [
+const TABLES: [&str; 10] = [
     "blocks",
     "day_plans",
     "schedules",
@@ -22,6 +22,9 @@ const TABLES: [&str; 7] = [
     "blocklist_removals",
     "blocklist_opt_outs",
     "settings",
+    "loose_ends",
+    "rituals",
+    "shutdown_delays",
 ];
 
 pub(crate) struct Channel {
