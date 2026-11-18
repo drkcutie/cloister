@@ -56,7 +56,7 @@ class SyncTest {
 
         // A Breach is synced to the account.
         a.recordBreach(BreachKind.VpnTurnedOff)
-        assertTrue(a.mirror.pendingBreaches.isEmpty())
+        assertTrue(a.mirror.queued.isEmpty())
         withTimeout(15.seconds) {
             while (b.state().breaches.isEmpty()) delay(200)
         }

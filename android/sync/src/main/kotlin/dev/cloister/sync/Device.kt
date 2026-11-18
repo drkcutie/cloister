@@ -73,6 +73,7 @@ class Device(
     private val name: String,
 ) {
     private val pullLock = Mutex()
+    private val flushLock = Mutex()
     private val _version = MutableStateFlow(0L)
     private val _status = MutableStateFlow(SyncStatus.Offline)
     @Volatile private var enforcing = false
@@ -85,7 +86,8 @@ class Device(
     val signedIn: Boolean get() = supabase.auth.currentSessionOrNull() != null
     val email: String? get() = supabase.auth.currentUserOrNull()?.email
 
-    fun state(): State = mirror.state
+    /** The state this Device shows and enforces: the cached one with commands queued offline applied. */
+    fun state(): State = mirror.replayedState()
     /** Trusted now (server-anchored, monotonic; the phone's clock can't move it). */
     fun serverTime(): Instant = mirror.serverTime()
 
@@ -98,7 +100,7 @@ class Device(
      */
     fun enforcement(): Enforcement {
         val trusted = mirror.serverTime()
-        return TrustedClock.enforcement(mirror.state, trusted, mirror.wallTime())
+        return TrustedClock.enforcement(state(), trusted, mirror.wallTime())
     }
 
     // --- sign-in ---------------------------------------------------------------------------
@@ -149,44 +151,59 @@ class Device(
 
     // --- commands --------------------------------------------------------------------------
 
-    /** Sends a command to the backend, then re-reads the account (either way the backend knows best). */
+    /**
+     * Sends a command to the backend (after any queued ones, keeping their order), then re-reads
+     * the account (either way the backend knows best). When the backend can't be reached, a
+     * command that only tightens or records (or completes the ritual) is decided here at trusted
+     * now, shown at once and queued for the backend; any other command fails.
+     */
     suspend fun send(command: Command): CommandOutcome {
+        val outcome = try {
+            flushQueue()
+            sendOnline(command)
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            if (!OfflineQueue.isOffline(e) || !OfflineQueue.queueable(command)) throw e
+            return mirror.decideOffline(command).also { bump() }
+        }
+        runCatching { pull() }
+        return outcome
+    }
+
+    private suspend fun sendOnline(command: Command): CommandOutcome {
         val response = online {
             supabase.postgrest.rpc("command", buildJsonObject { put("cmd", command.toJson()) })
                 .decodeAs<JsonObject>()
         }
-        val outcome = when (response["outcome"]?.jsonPrimitive?.content) {
+        return when (response["outcome"]?.jsonPrimitive?.content) {
             "accepted" -> CommandOutcome.Accepted
             else -> CommandOutcome.Rejected(response["reason"]?.jsonPrimitive?.content ?: "invalid_command")
         }
-        pull()
-        return outcome
     }
 
     /**
-     * Records a Breach now (shown at once, also offline) and sends it when it can. Resending is
-     * safe: the backend records each id once.
+     * Records a Breach now (shown at once, also offline, through the queue) and sends it when it
+     * can. Resending is safe: the backend records each id once.
      */
     suspend fun recordBreach(kind: BreachKind) {
         mirror.recordBreach(kind)
         bump()
-        runCatching { flushBreaches() }
+        runCatching { flushQueue() }
     }
 
-    /** Sends the Breaches recorded while offline. */
-    suspend fun flushBreaches() {
-        for (cmd in mirror.pendingBreaches) {
-            val outcome = send(cmd)
-            if (outcome is CommandOutcome.Accepted || outcome is CommandOutcome.Rejected) {
-                mirror.update { d -> d.copy(pendingBreaches = d.pendingBreaches.filterNot { it.breachId == cmd.breachId }) }
-            }
-        }
+    /**
+     * Sends the commands queued offline, in order. Each is dropped once the backend has answered
+     * (accepted or rejected: its answer stands). Stops at the first that can't reach it.
+     */
+    suspend fun flushQueue() = flushLock.withLock {
+        OfflineQueue.flush(mirror.queued, ::sendOnline) { mirror.dropQueued(it) }
     }
 
     // --- sync ------------------------------------------------------------------------------
 
     /** Re-reads the account into the mirror, tighten-only. Returns whether anything changed. */
     suspend fun pull(): Boolean = pullLock.withLock {
+        flushQueue()
         val incoming = online {
             State.fromJson(supabase.postgrest.rpc("state").decodeAs<JsonElement>())
         }
@@ -216,7 +233,7 @@ class Device(
     fun startSync(scope: CoroutineScope): Job = scope.launch {
         launch {
             while (isActive) {
-                runCatching { flushBreaches(); pull() }
+                runCatching { pull() }
                 delay(60.seconds)
             }
         }

@@ -1,6 +1,5 @@
 package dev.cloister.sync
 
-import dev.cloister.core.Breach
 import dev.cloister.core.BreachKind
 import dev.cloister.core.ClockAnchor
 import dev.cloister.core.Command
@@ -25,7 +24,7 @@ import kotlinx.serialization.json.put
 /**
  * This Device's cached copy of the account: the state it enforces offline, its Device id, the
  * trusted clock's anchor (the last server time and the boot clock then), the session, and
- * Breaches not yet sent. One JSON file, rewritten atomically. Thread-safe.
+ * commands decided offline, not yet sent. One JSON file, rewritten atomically. Thread-safe.
  */
 class Mirror(private val file: File, private val clock: DeviceClock = JvmDeviceClock) {
     private val lock = Any()
@@ -37,8 +36,8 @@ class Mirror(private val file: File, private val clock: DeviceClock = JvmDeviceC
         /** Null until the first server time; then trusted now runs on from it (see [TrustedClock]). */
         val anchor: ClockAnchor? = null,
         val session: String? = null,
-        /** Breaches recorded while offline, sent (idempotently) on the next sync. */
-        val pendingBreaches: List<Command.RecordBreach> = emptyList(),
+        /** Commands decided offline (Breaches too), sent in order on the next sync. */
+        val queued: List<Queued> = emptyList(),
     )
 
     val deviceId: String get() = synchronized(lock) { data.deviceId }
@@ -47,7 +46,20 @@ class Mirror(private val file: File, private val clock: DeviceClock = JvmDeviceC
     var session: String?
         get() = synchronized(lock) { data.session }
         set(value) = update { it.copy(session = value) }
-    val pendingBreaches: List<Command.RecordBreach> get() = synchronized(lock) { data.pendingBreaches }
+    val queued: List<Queued> get() = synchronized(lock) { data.queued }
+
+    /** The cached state with the queued commands applied: what this Device shows and enforces. */
+    fun replayedState(): State = synchronized(lock) { OfflineQueue.replay(data.state, data.queued) }
+
+    /** Decides [command] here at trusted now and queues it if accepted. */
+    fun decideOffline(command: Command): CommandOutcome = synchronized(lock) {
+        val (outcome, queue) = OfflineQueue.decide(replayedState(), data.queued, command, serverTime())
+        update { it.copy(queued = queue) }
+        outcome
+    }
+
+    /** Drops a queued command the backend has answered. */
+    fun dropQueued(q: Queued) = update { d -> d.copy(queued = d.queued.filterNot { it == q }) }
 
     /**
      * Trusted now: the last server time plus the boot-clock time since, never the wall clock (which
@@ -79,18 +91,13 @@ class Mirror(private val file: File, private val clock: DeviceClock = JvmDeviceC
     }
 
     /**
-     * Records a Breach in the cached state at once (so it shows offline) and queues it for the
-     * backend, which stamps the server time.
+     * Records a Breach at once (it shows offline through the queue) and queues it for the
+     * backend, which stamps the server time and records each id once.
      */
     fun recordBreach(kind: BreachKind): Command.RecordBreach {
         val cmd = Command.RecordBreach("${deviceId.take(8)}-${UUID.randomUUID()}", kind, Instant.now())
-        val breach = Breach(cmd.breachId, kind, serverTime())
-        update {
-            it.copy(
-                state = it.state.copy(breaches = it.state.breaches + breach),
-                pendingBreaches = it.pendingBreaches + cmd,
-            )
-        }
+        val at = serverTime()
+        update { it.copy(queued = it.queued + Queued(cmd, at)) }
         return cmd
     }
 
@@ -109,8 +116,11 @@ class Mirror(private val file: File, private val clock: DeviceClock = JvmDeviceC
                     )
                 },
                 session = (o["session"] as? JsonPrimitive)?.content,
-                pendingBreaches = (o["pending_breaches"] as? JsonArray).orEmpty()
-                    .map { Command.fromJson(it) as Command.RecordBreach },
+                queued = (o["queued_commands"] as? JsonArray).orEmpty().map { q ->
+                    val qo = q.jsonObject
+                    Queued(Command.fromJson(qo.getValue("command")), parseInstant(qo.getValue("queued_at").jsonPrimitive.content))
+                } + (o["pending_breaches"] as? JsonArray).orEmpty() // from before the queue
+                    .map { Queued(Command.fromJson(it), Instant.now()) },
             )
         } catch (e: Exception) {
             // A corrupt cache must not stop enforcement of a fresh one; the next sync refills it.
@@ -134,7 +144,10 @@ class Mirror(private val file: File, private val clock: DeviceClock = JvmDeviceC
                 )
             }
             d.session?.let { put("session", it) }
-            put("pending_breaches", JsonArray(d.pendingBreaches.map { it.toJson() }))
+            put(
+                "queued_commands",
+                JsonArray(d.queued.map { q -> buildJsonObject { put("command", q.command.toJson()); put("queued_at", q.queuedAt.toString()) } }),
+            )
         }
         val tmp = File(file.path + ".tmp")
         tmp.writeText(json.toString())
