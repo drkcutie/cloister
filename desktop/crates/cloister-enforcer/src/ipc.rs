@@ -12,8 +12,8 @@ use std::thread;
 
 use chrono::{DateTime, Utc};
 use cloister_core::{
-    Block, BlocklistEdits, Command, DayPlan, Enforcement, Lockdown, PendingSettings, Schedule,
-    Settings, State,
+    Block, BlocklistEdits, Command, DayPlan, Enforcement, Lockdown, PendingSettings, Ritual,
+    Schedule, Settings, ShutdownDelay, State,
 };
 use serde::{Deserialize, Serialize};
 
@@ -69,6 +69,13 @@ pub enum Response {
         /// The settings in force now.
         #[serde(default)]
         settings: Option<Settings>,
+        /// When the latest Shutdown Ritual became due, or today's will (Shutdown Time, later
+        /// with a Shutdown Delay). The screen state itself is `enforcement.ritual`.
+        #[serde(default)]
+        ritual_due_at: Option<DateTime<Utc>>,
+        /// Shutdown Delays left this ISO week (0 or 1).
+        #[serde(default)]
+        shutdown_delays_left: u8,
     },
 }
 
@@ -87,6 +94,12 @@ pub struct Planning {
     pub day_plans: Vec<DayPlan>,
     #[serde(default)]
     pub schedules: Vec<Schedule>,
+    /// Shutdown Delays used (from any Device). Merged only where the rules allow them.
+    #[serde(default)]
+    pub shutdown_delays: Vec<ShutdownDelay>,
+    /// Completed Shutdown Rituals. Merged only where the rules allow them.
+    #[serde(default)]
+    pub rituals: Vec<Ritual>,
 }
 
 fn utc() -> String {
@@ -102,6 +115,8 @@ impl Planning {
             pending_settings: state.pending_settings.clone(),
             day_plans: state.day_plans.clone(),
             schedules: state.schedules.clone(),
+            shutdown_delays: state.shutdown_delays.clone(),
+            rituals: state.rituals.clone(),
         }
     }
 }

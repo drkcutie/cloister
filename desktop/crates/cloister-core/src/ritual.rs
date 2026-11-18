@@ -138,6 +138,14 @@ pub fn ritual_screen(state: &State, now: DateTime<Utc>) -> RitualScreen {
     }
 }
 
+/// The Shutdown Ritual that matters at `now`: today's due time if it is still to come (a
+/// Workday), else when the latest ritual became due.
+pub fn shutdown_ritual_at(state: &State, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    ritual_due_at(state, local_date(state, now), now)
+        .filter(|due| *due > now)
+        .or_else(|| ritual(state, now).map(|r| r.due_at))
+}
+
 /// How many Shutdown Delays are left in the ISO week of `now` (local): 1 or 0.
 pub fn shutdown_delays_left(state: &State, now: DateTime<Utc>) -> u8 {
     let week = iso_week(local_date(state, now));

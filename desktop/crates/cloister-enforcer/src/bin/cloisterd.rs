@@ -1,9 +1,15 @@
 //! `cloisterd`: the Cloister enforcement service (runs as root under launchd).
 //!
 //! ```text
-//! cloisterd run [--state PATH] [--socket PATH] [--dns ADDR] [--upstream ADDR] [--tick SECS] [--dry-run]
+//! cloisterd run [--state PATH] [--socket PATH] [--dns ADDR] [--upstream ADDR] [--tick SECS]
+//!               [--ritual-flag PATH] [--dry-run]
 //! cloisterd plist --binary PATH      # print the launchd daemon definition
+//! cloisterd ritual-plist --app PATH [--flag PATH]   # print the ritual window's launch agent
 //! ```
+//!
+//! While the Shutdown Ritual is due the service keeps a flag file (default
+//! `/var/run/cloister-ritual-due`; in a dry run only with `--ritual-flag`), which keeps the
+//! ritual window's launch agent alive.
 //!
 //! `--dry-run` logs each Enforcement instead of touching the system, so the service, its
 //! DNS filter (on a high `--dns` port) and IPC can be run without root. Without `--dry-run`
@@ -32,6 +38,7 @@ struct Options {
     dns: SocketAddr,
     upstreams: Vec<SocketAddr>,
     tick: Duration,
+    ritual_flag: Option<PathBuf>,
     dry_run: bool,
 }
 
@@ -40,7 +47,8 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         Some("run") => parse_run(&args[1..]).and_then(run),
         Some("plist") => plist(&args[1..]),
-        _ => Err("usage: cloisterd run [options] | cloisterd plist --binary PATH".into()),
+        Some("ritual-plist") => ritual_plist(&args[1..]),
+        _ => Err("usage: cloisterd run [options] | cloisterd plist --binary PATH | cloisterd ritual-plist --app PATH".into()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -58,6 +66,7 @@ fn parse_run(args: &[String]) -> Result<Options, String> {
         dns: "127.0.0.1:53".parse().unwrap(),
         upstreams: vec![],
         tick: Duration::from_secs(5),
+        ritual_flag: None,
         dry_run: false,
     };
     let mut it = args.iter();
@@ -73,6 +82,7 @@ fn parse_run(args: &[String]) -> Result<Options, String> {
             "--tick" => {
                 o.tick = Duration::from_secs(value()?.parse().map_err(|e| format!("--tick: {e}"))?)
             }
+            "--ritual-flag" => o.ritual_flag = Some(value()?.into()),
             "--dry-run" => o.dry_run = true,
             other => return Err(format!("unknown option {other}")),
         }
@@ -95,13 +105,19 @@ fn run(o: Options) -> Result<(), String> {
         system_platform(o.upstreams[0])?
     };
     let domains = shared_domains();
-    let service = Service::open(
+    let mut service = Service::open(
         StateStore::new(&o.state),
         platform,
         TrustedClock::start(),
         domains.clone(),
     )
     .map_err(|e| format!("loading {}: {e}", o.state.display()))?;
+    service.set_ritual_flag(
+        o.ritual_flag
+            .clone()
+            .or_else(|| default_ritual_flag(o.dry_run)),
+    );
+    service.tick();
     let filter = DnsFilter::spawn(o.dns, o.upstreams.clone(), domains)
         .map_err(|e| format!("DNS filter on {}: {e}", o.dns))?;
     let service = Arc::new(Mutex::new(service));
@@ -132,6 +148,35 @@ fn system_platform(upstream: SocketAddr) -> Result<Box<dyn Platform>, String> {
 #[cfg(not(target_os = "macos"))]
 fn system_platform(_: SocketAddr) -> Result<Box<dyn Platform>, String> {
     Err("no enforcement for this OS yet; use --dry-run".into())
+}
+
+#[cfg(target_os = "macos")]
+fn default_ritual_flag(dry_run: bool) -> Option<PathBuf> {
+    (!dry_run).then(|| cloister_enforcer::macos::RITUAL_FLAG_PATH.into())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn default_ritual_flag(_: bool) -> Option<PathBuf> {
+    None
+}
+
+fn ritual_plist(args: &[String]) -> Result<(), String> {
+    match args {
+        #[cfg(target_os = "macos")]
+        [flag, app, rest @ ..] if flag == "--app" => {
+            let path = match rest {
+                [] => cloister_enforcer::macos::RITUAL_FLAG_PATH.to_string(),
+                [f, path] if f == "--flag" => path.clone(),
+                _ => return Err("usage: cloisterd ritual-plist --app PATH [--flag PATH]".into()),
+            };
+            print!(
+                "{}",
+                cloister_enforcer::macos::ritual_agent_plist(app, &path)
+            );
+            Ok(())
+        }
+        _ => Err("usage: cloisterd ritual-plist --app PATH [--flag PATH]".into()),
+    }
 }
 
 fn plist(args: &[String]) -> Result<(), String> {

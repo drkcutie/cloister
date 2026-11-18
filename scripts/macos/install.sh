@@ -23,6 +23,16 @@ install -o root -g wheel -m 755 "$TARGET_DIR/release/cloister" "$CLI"
 chown root:wheel "$PLIST"
 chmod 644 "$PLIST"
 
+# The Shutdown Ritual window: a root-owned launch agent that launchd keeps alive in the GUI
+# session while cloisterd holds /var/run/cloister-ritual-due. Point CLOISTER_APP at the built
+# cloister-app binary (a release build: debug builds have the kiosk escape hatch).
+APP=${CLOISTER_APP:-/Applications/Cloister.app/Contents/MacOS/cloister-app}
+RITUAL_PLIST=/Library/LaunchAgents/com.cloister.ritual.plist
+"$DAEMON" ritual-plist --app "$APP" > "$RITUAL_PLIST"
+chown root:wheel "$RITUAL_PLIST"
+chmod 644 "$RITUAL_PLIST"
+[[ -x "$APP" ]] || echo "Note: $APP doesn't exist yet; the ritual window starts once it does." >&2
+
 launchctl bootout system "$PLIST" 2>/dev/null || true
 launchctl bootstrap system "$PLIST"
 launchctl enable "system/$LABEL"

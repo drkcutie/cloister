@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use cloister_core::Enforcement;
+use cloister_core::{Enforcement, RitualScreen};
 
 use crate::domains::DomainSet;
 use crate::service::Platform;
@@ -19,6 +19,77 @@ pub const LABEL: &str = "com.cloister.enforcer";
 pub const PLIST_PATH: &str = "/Library/LaunchDaemons/com.cloister.enforcer.plist";
 pub const HOSTS_PATH: &str = "/etc/hosts";
 const RESOLVE_EVERY: Duration = Duration::from_secs(600);
+/// The per-user launch agent that shows the Shutdown Ritual window.
+pub const RITUAL_LABEL: &str = "com.cloister.ritual";
+/// Root-owned, so it loads in every GUI login and the user can't edit or delete it.
+pub const RITUAL_PLIST_PATH: &str = "/Library/LaunchAgents/com.cloister.ritual.plist";
+/// Exists while the ritual is due (written by cloisterd). Under /var/run, so a reboot clears it
+/// and the first tick after boot decides afresh, before anyone logs in.
+pub const RITUAL_FLAG_PATH: &str = "/var/run/cloister-ritual-due";
+
+/// The ritual window's launch agent. launchd keeps it running while `flag` exists: it starts
+/// at login if the ritual is due, and is relaunched one second after it exits or is killed.
+/// Nothing runs while the flag is absent.
+pub fn ritual_agent_plist(app: &str, flag: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{RITUAL_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{app}</string>
+        <string>--ritual</string>
+    </array>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>KeepAlive</key>
+    <dict>
+        <key>PathState</key>
+        <dict>
+            <key>{flag}</key>
+            <true/>
+        </dict>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>1</integer>
+</dict>
+</plist>
+"#
+    )
+}
+
+/// The user id that owns the GUI session on the main display, if someone is logged in.
+fn console_user() -> Option<u32> {
+    let uid: u32 = run("/usr/bin/stat", &["-f", "%u", "/dev/console"])
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    (uid != 0).then_some(uid)
+}
+
+/// While the ritual is due, make sure the ritual agent is loaded in the console user's GUI
+/// domain (a user can `launchctl bootout` their own agents; root loads it back).
+fn keep_ritual_agent_loaded() -> io::Result<()> {
+    let Some(uid) = console_user() else {
+        return Ok(());
+    };
+    let domain = format!("gui/{uid}");
+    if run(
+        "/bin/launchctl",
+        &["print", &format!("{domain}/{RITUAL_LABEL}")],
+    )
+    .is_err()
+    {
+        run("/bin/launchctl", &["bootstrap", &domain, RITUAL_PLIST_PATH])?;
+    }
+    Ok(())
+}
 
 /// The launchd daemon definition: starts at boot and is relaunched whenever it exits.
 pub fn launchd_plist(binary: &str) -> String {
@@ -153,6 +224,11 @@ impl Platform for MacPlatform {
         if let Err(e) = self.quit_blocked_apps(&enforcement.blocked_apps) {
             errors.push(format!("apps: {e}"));
         }
+        if enforcement.ritual == RitualScreen::Due {
+            if let Err(e) = keep_ritual_agent_loaded() {
+                errors.push(format!("ritual agent: {e}"));
+            }
+        }
         if changed {
             let _ = run("dscacheutil", &["-flushcache"]);
             let _ = run("killall", &["-HUP", "mDNSResponder"]);
@@ -222,6 +298,21 @@ mod tests {
         assert_eq!(
             parse_network_services(out),
             ["Wi-Fi", "Thunderbolt Bridge", "USB 10/100/1000 LAN"]
+        );
+    }
+
+    #[test]
+    fn the_ritual_agent_is_kept_alive_only_while_the_flag_exists() {
+        let plist = ritual_agent_plist(
+            "/Applications/Cloister.app/Contents/MacOS/cloister-app",
+            RITUAL_FLAG_PATH,
+        );
+        assert!(plist.contains("<string>--ritual</string>"));
+        assert!(plist.contains("<key>PathState</key>\n        <dict>\n            <key>/var/run/cloister-ritual-due</key>\n            <true/>"));
+        assert!(plist.contains("<key>ThrottleInterval</key>\n    <integer>1</integer>"));
+        assert!(
+            !plist.contains("RunAtLoad"),
+            "nothing runs while the ritual isn't due"
         );
     }
 

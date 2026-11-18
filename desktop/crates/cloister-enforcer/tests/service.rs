@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, Utc};
 use cloister_core::{
-    BlocklistEdits, BlocklistRemoval, Command, DayPlan, Enforcement, EntryKind, Lockdown, Settings,
-    Slot,
+    BlocklistEdits, BlocklistRemoval, Command, DayPlan, Enforcement, EntryKind, Lockdown, Ritual,
+    RitualScreen, Settings, ShutdownDelay, Slot,
 };
 use cloister_enforcer::dns::SharedDomains;
 use cloister_enforcer::ipc::{self, Planning, Request, Response};
@@ -674,4 +674,149 @@ fn a_deep_session_cannot_start_in_evening_lockdown_over_ipc() {
             reason: "evening_lockdown".into()
         }
     );
+}
+
+// The Shutdown Ritual: due on the service's own clock; lifted only by synced records ------------
+
+fn ritual_flag(dir: &tempfile::TempDir) -> PathBuf {
+    dir.path().join("ritual-due")
+}
+
+fn start_with_flag(dir: &tempfile::TempDir, clock: &FakeClock) -> Running {
+    let r = start(dir, clock);
+    r.service
+        .lock()
+        .unwrap()
+        .set_ritual_flag(Some(ritual_flag(dir)));
+    r.service.lock().unwrap().tick();
+    r
+}
+
+fn ritual_now(r: &Running) -> RitualScreen {
+    r.platform.last().ritual
+}
+
+fn tomorrow_planned() -> DayPlan {
+    plan(
+        "2026-01-06",
+        vec![deep_slot(
+            "t1",
+            "2026-01-06T09:00:00Z",
+            "2026-01-06T17:00:00Z",
+        )],
+    )
+}
+
+#[test]
+fn the_ritual_falls_due_at_shutdown_time_and_raises_the_ritual_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T16:59:00Z");
+    let r = start_with_flag(&dir, &clock);
+    sync_planning(
+        &r,
+        Planning {
+            settings: Some(weekdays_9_to_5()),
+            ..Planning::default()
+        },
+    );
+    assert!(!ritual_flag(&dir).exists());
+    drop(r);
+
+    // Restarted at Shutdown Time with nothing syncing: the service's own state makes it due.
+    clock.advance(Duration::minutes(1));
+    let r = start_with_flag(&dir, &clock);
+    assert_eq!(ritual_now(&r), RitualScreen::Due);
+    assert!(ritual_flag(&dir).exists(), "the ritual window is kept up");
+    let Response::Status { ritual_due_at, .. } = ipc::send(&r.socket, &Request::Status).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(ritual_due_at, Some(utc("2026-01-05T17:00:00Z")));
+}
+
+#[test]
+fn a_completed_ritual_arrives_by_sync_and_lowers_the_flag_only_if_tomorrow_is_planned() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T17:20:00Z");
+    let r = start_with_flag(&dir, &clock);
+    let done = Ritual {
+        date: "2026-01-05".parse().unwrap(),
+        completed_at: utc("2026-01-05T17:15:00Z"),
+    };
+    sync_planning(
+        &r,
+        Planning {
+            settings: Some(weekdays_9_to_5()),
+            rituals: vec![done.clone()],
+            ..Planning::default()
+        },
+    );
+    assert_eq!(
+        ritual_now(&r),
+        RitualScreen::Due,
+        "no plan for tomorrow here"
+    );
+    assert!(ritual_flag(&dir).exists());
+    sync_planning(
+        &r,
+        Planning {
+            settings: Some(weekdays_9_to_5()),
+            day_plans: vec![tomorrow_planned()],
+            rituals: vec![done],
+            ..Planning::default()
+        },
+    );
+    assert_eq!(ritual_now(&r), RitualScreen::Completed);
+    assert!(!ritual_flag(&dir).exists());
+}
+
+#[test]
+fn a_synced_shutdown_delay_holds_lockdown_and_the_ritual_for_30_minutes() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T16:30:00Z");
+    let r = start_with_flag(&dir, &clock);
+    sync_planning(
+        &r,
+        Planning {
+            settings: Some(weekdays_9_to_5()),
+            shutdown_delays: vec![ShutdownDelay {
+                date: "2026-01-05".parse().unwrap(),
+                used_at: utc("2026-01-05T16:20:00Z"),
+            }],
+            ..Planning::default()
+        },
+    );
+    clock.advance(Duration::minutes(45));
+    r.service.lock().unwrap().tick();
+    assert_eq!(ritual_now(&r), RitualScreen::Delayed);
+    assert!(!blocks(&r, "github.com"));
+    assert!(!ritual_flag(&dir).exists());
+    clock.advance(Duration::minutes(15));
+    r.service.lock().unwrap().tick();
+    assert_eq!(ritual_now(&r), RitualScreen::Due);
+    assert!(blocks(&r, "github.com"));
+    assert!(ritual_flag(&dir).exists());
+}
+
+#[test]
+fn nothing_over_ipc_can_complete_or_delay_the_ritual() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T17:05:00Z");
+    let r = start(&dir, &clock);
+    for command in [
+        Command::UseShutdownDelay {},
+        Command::CompleteRitual {
+            typed: "Shutdown complete".into(),
+        },
+        Command::CloseLooseEnd {
+            loose_end_id: "l1".into(),
+        },
+    ] {
+        assert_eq!(
+            send(&r, command),
+            Response::Rejected {
+                reason: "loosening_not_accepted".into()
+            }
+        );
+    }
 }

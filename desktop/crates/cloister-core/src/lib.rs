@@ -30,8 +30,9 @@ pub use day_plan::{
     ScheduleSlot, Slot, SlotInput,
 };
 pub use ritual::{
-    next_workday_plan, ritual, ritual_due_at, ritual_screen, shutdown_delays_left, LooseEnd,
-    Ritual, RitualStatus, ShutdownDelay, MAX_LOOSE_END, SHUTDOWN_COMPLETE, SHUTDOWN_DELAY,
+    next_workday_plan, ritual, ritual_due_at, ritual_screen, shutdown_delays_left,
+    shutdown_ritual_at, LooseEnd, Ritual, RitualStatus, ShutdownDelay, MAX_LOOSE_END,
+    SHUTDOWN_COMPLETE, SHUTDOWN_DELAY,
 };
 pub use settings::{
     lockdown, next_workday_start, settings_at, workday, Lockdown, PendingSettings, Settings,

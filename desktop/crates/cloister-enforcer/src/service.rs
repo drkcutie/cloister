@@ -2,12 +2,14 @@
 //! tick, asks the rules engine for the current Enforcement and applies it.
 
 use std::io;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use cloister_core::{
-    decide, enforcement, lockdown, next_workday_start, settings_at, Block, BlocklistEdits, Command,
-    Enforcement, Outcome, State, MAX_BLOCK, QUIT_SOCIAL_BLOCK,
+    decide, enforcement, lockdown, next_workday_start, settings_at, shutdown_delays_left,
+    shutdown_ritual_at, Block, BlocklistEdits, Command, Enforcement, Outcome, RitualScreen, State,
+    MAX_BLOCK, QUIT_SOCIAL_BLOCK,
 };
 
 use crate::dns::SharedDomains;
@@ -45,6 +47,7 @@ pub struct Service<P, C> {
     platform: P,
     clock: C,
     domains: SharedDomains,
+    ritual_flag: Option<PathBuf>,
 }
 
 impl<P: Platform, C: Clock> Service<P, C> {
@@ -62,9 +65,17 @@ impl<P: Platform, C: Clock> Service<P, C> {
             platform,
             clock,
             domains,
+            ritual_flag: None,
         };
         service.tick();
         Ok(service)
+    }
+
+    /// Keep a file at `path` while the Shutdown Ritual is due (and only then). The ritual
+    /// window's launch agent is kept alive by launchd while that file exists, so the window is
+    /// shown at login and relaunched within a second if it is killed.
+    pub fn set_ritual_flag(&mut self, path: Option<PathBuf>) {
+        self.ritual_flag = path;
     }
 
     /// Re-apply the Enforcement for now, computed by the rules engine from the service's own
@@ -81,6 +92,11 @@ impl<P: Platform, C: Clock> Service<P, C> {
         if let Err(e) = self.platform.apply(&current) {
             eprintln!("cloisterd: applying enforcement failed: {e}");
         }
+        if let Some(path) = &self.ritual_flag {
+            if let Err(e) = set_flag(path, current.ritual == RitualScreen::Due) {
+                eprintln!("cloisterd: ritual flag {}: {e}", path.display());
+            }
+        }
         current
     }
 
@@ -96,6 +112,8 @@ impl<P: Platform, C: Clock> Service<P, C> {
                     lockdown: lockdown(&self.state, now),
                     next_workday_start: next_workday_start(&self.state, now),
                     settings: settings_at(&self.state, now),
+                    ritual_due_at: shutdown_ritual_at(&self.state, now),
+                    shutdown_delays_left: shutdown_delays_left(&self.state, now),
                 }
             }
             Request::Command { command } => self.command(command),
@@ -185,6 +203,12 @@ fn tightens(command: &Command) -> bool {
         Command::WriteDayPlan { .. }
         | Command::PutSchedule { .. }
         | Command::ChangeSettings { .. } => false,
+        // A Loose End is a record. A Shutdown Delay or a completed ritual lifts enforcement:
+        // the backend decides and the Sync hands the record over (merge_ritual_records).
+        Command::CaptureLooseEnd { .. } => true,
+        Command::CloseLooseEnd { .. }
+        | Command::UseShutdownDelay {}
+        | Command::CompleteRitual { .. } => false,
     }
 }
 
@@ -249,6 +273,22 @@ pub fn merge_planning(state: &mut State, planning: &Planning, now: DateTime<Utc>
     }
     for plan in &planning.day_plans {
         state.merge_day_plan(plan, now);
+    }
+    state.merge_ritual_records(&planning.shutdown_delays, &planning.rituals, now);
+}
+
+/// Create (with the ritual's state) or remove the ritual flag file. Idempotent.
+fn set_flag(path: &std::path::Path, due: bool) -> io::Result<()> {
+    if due {
+        if !path.exists() {
+            std::fs::write(path, b"due\n")?;
+        }
+        Ok(())
+    } else {
+        match std::fs::remove_file(path) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
     }
 }
 
