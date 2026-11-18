@@ -282,7 +282,7 @@ class Device(
         /** Tables whose changes alter what this Device enforces or shows. */
         val TABLES = listOf(
             "blocks", "day_plans", "schedules", "blocklist_entries", "blocklist_removals", "blocklist_opt_outs",
-            "breaches",
+            "breaches", "settings",
         )
 
         /** Where the magic link sends the browser back to (registered in backend config). */

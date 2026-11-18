@@ -43,7 +43,7 @@ fun rememberNow(offsetMillis: Long): Instant {
  * left, and one way out (home).
  */
 @Composable
-fun BlockedAppOverlay(session: Block?, offsetMillis: Long, onHome: () -> Unit) {
+fun BlockedAppOverlay(session: Block?, offsetMillis: Long, lockdown: dev.cloister.core.Lockdown? = null, nextWorkdayStart: Instant? = null, onHome: () -> Unit) {
     val c = Day
     val now = rememberNow(offsetMillis)
     CloisterTheme {
@@ -51,10 +51,20 @@ fun BlockedAppOverlay(session: Block?, offsetMillis: Long, onHome: () -> Unit) {
             Modifier.fillMaxSize().background(c.ground).systemBarsPadding().padding(horizontal = 28.dp, vertical = 40.dp),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Masthead(if (session?.deep == true) "Deep Session" else "Block")
+            Masthead(
+                when {
+                    session?.deep == true -> "Deep Session"
+                    session != null -> "Block"
+                    lockdown == dev.cloister.core.Lockdown.RestDay -> "Rest Day"
+                    else -> "Evening Lockdown"
+                },
+            )
             Column(Modifier.widthIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 Text("This app is blocked.", style = Type.heading, color = c.ink2, modifier = Modifier.semantics { heading() })
                 session?.intent?.let { Text(it, style = Type.intent, color = c.ink) }
+                if (session == null && nextWorkdayStart != null) {
+                    Text("Work starts again at ${Copy.clock(nextWorkdayStart)}.", style = Type.body, color = c.ink2)
+                }
                 session?.let {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(Copy.countdown(Duration.between(now, it.endsAt)), style = Type.timer.copy(fontSize = Type.timer.fontSize * 0.78f), color = c.ink)

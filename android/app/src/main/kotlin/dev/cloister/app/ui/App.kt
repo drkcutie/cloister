@@ -68,7 +68,12 @@ fun App(device: Device, enforcer: Enforcer, configured: Boolean, actions: Action
     val today = LocalDate.now(ZoneId.systemDefault())
     val plan = remember(version, today) { DayPlans.dayPlan(state, today) }
     // Day (Workday) or Night (after Shutdown Time / before Workday Start), driven by time.
-    val night = plan != null && (serverNow.isBefore(plan.startsAt) || !serverNow.isBefore(plan.endsAt))
+    var tomorrow by rememberSaveable { mutableStateOf(false) }
+    val shownDate = if (tomorrow) today.plusDays(1) else today
+    val shownPlan = remember(version, shownDate) { DayPlans.dayPlan(state, shownDate) }
+    val night = now.lockdown != null ||
+        (now.lockdown == null && state.settings == null && plan != null &&
+            (serverNow.isBefore(plan.startsAt) || !serverNow.isBefore(plan.endsAt)))
 
     CloisterTheme(night = night) {
         val c = LocalColors.current
@@ -91,8 +96,15 @@ fun App(device: Device, enforcer: Enforcer, configured: Boolean, actions: Action
                     else -> Column(Modifier.fillMaxSize()) {
                         TabRow(tab) { tab = it }
                         when (tab) {
-                            Tab.Today -> BeginScreen(device, now, status.label) { tab = Tab.Setup }
-                            Tab.DayPlan -> DayPlanScreen(plan, saved = state.dayPlans.any { it.date == today }, serverNow)
+                            Tab.Today -> if (now.lockdown != null) {
+                                LockdownScreen(now) { tomorrow = true; tab = Tab.DayPlan }
+                            } else {
+                                BeginScreen(device, now, status.label) { tab = Tab.Setup }
+                            }
+                            Tab.DayPlan -> DayPlanScreen(
+                                shownPlan, saved = state.dayPlans.any { it.date == shownDate }, serverNow,
+                                tomorrow = tomorrow, onToggleDay = { tomorrow = !tomorrow },
+                            )
                             Tab.Setup -> SetupScreen(device, now, actions)
                         }
                     }

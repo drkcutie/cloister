@@ -142,6 +142,36 @@ fun BeginScreen(device: Device, now: EnforcementNow, syncLabel: String, openSetu
     }
 }
 
+// --- Evening Lockdown / Rest Day ---------------------------------------------------------
+
+@Composable
+fun LockdownScreen(now: EnforcementNow, openTomorrow: () -> Unit) {
+    val c = LocalColors.current
+    val rest = now.lockdown == dev.cloister.core.Lockdown.RestDay
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 40.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Masthead(if (rest) "Rest Day" else "Evening Lockdown")
+        Column(Modifier.widthIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(48.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    if (rest) "Today is a Rest Day." else "The workday has ended.",
+                    style = Type.display, color = c.ink, modifier = Modifier.semantics { heading() },
+                )
+                Text("Work and distractions are blocked.", style = Type.body, color = c.ink2)
+            }
+            now.nextWorkdayStart?.let { start ->
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(Copy.clock(start), style = Type.timer.copy(fontSize = Type.timer.fontSize * 0.78f), color = c.ink)
+                    Text("Workday Start, ${Copy.day(start, now.serverTime)}", style = Type.detail, color = c.ink2)
+                }
+            }
+        }
+        QuietButton("Tomorrow's Day Plan", Modifier.fillMaxWidth(), onClick = openTomorrow)
+    }
+}
+
 // --- Deep Session in progress --------------------------------------------------------------
 
 @Composable
@@ -211,13 +241,14 @@ fun DepthRatingScreen(device: Device, session: Block, later: () -> Unit) {
 // --- Today's Day Plan (read-only) ----------------------------------------------------------
 
 @Composable
-fun DayPlanScreen(plan: DayPlan?, saved: Boolean, now: Instant) {
+fun DayPlanScreen(plan: DayPlan?, saved: Boolean, now: Instant, tomorrow: Boolean = false, onToggleDay: () -> Unit = {}) {
     val c = LocalColors.current
     val dateFmt = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.getDefault())
     Page {
-        Eyebrow("Day Plan")
+        Eyebrow(if (tomorrow) "Tomorrow's Day Plan" else "Day Plan")
+        TextAction(if (tomorrow) "Show today" else "Show tomorrow", onClick = onToggleDay)
         if (plan == null) {
-            Text("No Day Plan today.", style = Type.title, color = c.ink, modifier = Modifier.semantics { heading() })
+            Text(if (tomorrow) "No Day Plan tomorrow." else "No Day Plan today.", style = Type.title, color = c.ink, modifier = Modifier.semantics { heading() })
             Notice("Write tomorrow's Day Plan on the desktop during the Shutdown Ritual.")
             return@Page
         }

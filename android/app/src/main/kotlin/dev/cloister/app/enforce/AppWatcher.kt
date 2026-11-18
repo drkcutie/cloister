@@ -127,7 +127,7 @@ class AppWatcher : AccessibilityService() {
                 val current = androidx.compose.runtime.produceState(now) { state.collect { value = it } }.value
                 val offset = current.serverTime.toEpochMilli() - System.currentTimeMillis()
                 when (kind) {
-                    Kind.BlockedApp -> BlockedAppOverlay(current.session, offset) {
+                    Kind.BlockedApp -> BlockedAppOverlay(current.session, offset, current.lockdown, current.nextWorkdayStart) {
                         performGlobalAction(GLOBAL_ACTION_HOME)
                         hideOverlay()
                     }

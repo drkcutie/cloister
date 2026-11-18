@@ -11,6 +11,18 @@ object Copy {
 
     fun clock(t: Instant): String = hhmm.format(t.atZone(ZoneId.systemDefault()))
 
+    /** "today", "tomorrow" or a weekday and date, relative to [now] in local time. */
+    fun day(t: Instant, now: Instant): String {
+        val zone = ZoneId.systemDefault()
+        val d = t.atZone(zone).toLocalDate()
+        val today = now.atZone(zone).toLocalDate()
+        return when (d) {
+            today -> "today"
+            today.plusDays(1) -> "tomorrow"
+            else -> DateTimeFormatter.ofPattern("EEEE d MMMM").format(d)
+        }
+    }
+
     /** "47:12" under an hour, "1:47:12" above. Fixed-width digits keep it still. */
     fun countdown(left: Duration): String {
         val s = left.seconds.coerceAtLeast(0)
@@ -41,6 +53,8 @@ object Copy {
         "invalid_depth_rating" -> "A Depth Rating is 1 to 5."
         "depth_rating_already_recorded" -> "This Depth Rating is already recorded."
         "not_signed_in" -> "Sign in to start a Block."
+        "evening_lockdown" -> "Evening Lockdown. Deep Sessions start again at Workday Start."
+        "rest_day" -> "A Rest Day. Deep Sessions start again on the next Workday."
         else -> "The backend kept things as they are ($code)."
     }
 }

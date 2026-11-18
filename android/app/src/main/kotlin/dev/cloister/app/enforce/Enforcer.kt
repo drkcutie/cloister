@@ -11,6 +11,8 @@ import androidx.core.content.ContextCompat
 import dev.cloister.core.Block
 import dev.cloister.core.BreachKind
 import dev.cloister.core.Enforcement
+import dev.cloister.core.Lockdown
+import dev.cloister.core.WorkdaySettings
 import dev.cloister.core.RulesEngine
 import dev.cloister.sync.Device
 import java.time.Instant
@@ -27,6 +29,10 @@ data class EnforcementNow(
     val enforcement: Enforcement = Enforcement(),
     /** The Block or planned Deep Session to show (Intent, time left), if any. */
     val session: Block? = null,
+    /** Evening Lockdown or a Rest Day, on the clock (null without settings or during work). */
+    val lockdown: Lockdown? = null,
+    /** When work is next allowed, while locked down. */
+    val nextWorkdayStart: Instant? = null,
     val serverTime: Instant = Instant.EPOCH,
     val vpnRunning: Boolean = false,
     val appBlockerOn: Boolean = false,
@@ -79,6 +85,7 @@ class Enforcer(private val context: Context, val device: Device, private val sco
         val session = RulesEngine.activeSessions(state, serverTime)
             .sortedWith(compareBy({ it.quitSocial }, { -it.endsAt.epochSecond }))
             .firstOrNull()
+        val lockdown = WorkdaySettings.lockdown(state, serverTime)
         FilterVpn.update(enforcement.blockedDomains)
         val dpm = context.getSystemService(DevicePolicyManager::class.java)
         val admin = AdminReceiver.component(context)
@@ -86,6 +93,8 @@ class Enforcer(private val context: Context, val device: Device, private val sco
         val next = EnforcementNow(
             enforcement = enforcement,
             session = session,
+            lockdown = lockdown,
+            nextWorkdayStart = lockdown?.let { WorkdaySettings.nextWorkdayStart(state, serverTime) },
             serverTime = serverTime,
             vpnRunning = FilterVpn.running,
             appBlockerOn = AppWatcher.running,
