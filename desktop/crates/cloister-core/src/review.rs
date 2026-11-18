@@ -148,7 +148,7 @@ pub struct WeekSummary {
 }
 
 /// One Deep Session as the scoreboard sees it.
-struct Session {
+struct DeepSession {
     id: String,
     starts_at: DateTime<Utc>,
     ends_at: DateTime<Utc>,
@@ -157,12 +157,12 @@ struct Session {
 
 /// Every Deep Session known around `[from, to)`: deep Blocks, and deep Slots of saved or
 /// Schedule-filled Day Plans of those days. Sorted by start; an id counts once.
-fn deep_sessions(state: &State, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Session> {
-    let mut sessions: Vec<Session> = state
+fn deep_sessions(state: &State, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<DeepSession> {
+    let mut sessions: Vec<DeepSession> = state
         .blocks
         .iter()
         .filter(|b| b.deep)
-        .map(|b| Session {
+        .map(|b| DeepSession {
             id: b.id.clone(),
             starts_at: b.starts_at,
             ends_at: b.ends_at,
@@ -173,7 +173,7 @@ fn deep_sessions(state: &State, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<S
     let last = local_date(state, to);
     for date in first.iter_days().take_while(|d| *d <= last) {
         if let Some(plan) = crate::day_plan(state, date) {
-            sessions.extend(plan.slots.iter().filter(|s| s.deep).map(|s| Session {
+            sessions.extend(plan.slots.iter().filter(|s| s.deep).map(|s| DeepSession {
                 id: s.id.clone(),
                 starts_at: s.starts_at,
                 ends_at: s.ends_at,

@@ -77,7 +77,9 @@ object Copy {
         Reason.UnknownBlock -> "That Block isn't on this account."
         Reason.UnknownBlocklist -> "That Blocklist isn't on this account."
         Reason.BlockCannotBeShortened -> "A Block can be extended, not shortened."
-        Reason.BlockCannotBeCancelled, Reason.LooseningNotAccepted ->
+        Reason.TakesEffectTomorrow -> "This goes through your account and takes effect tomorrow."
+        Reason.AccountRequired -> "This goes through your account. Sign in to do it."
+        Reason.BlockCannotBeCancelled, Reason.BlockCannotBeChanged ->
             endsAt?.let { "Ends at ${clock(it)}. Can't be cancelled." } ?: "A Block can't be cancelled."
         Reason.BlockHasEnded -> "That Block has already ended."
         Reason.NotADeepSession -> "Only a Deep Session has a Depth Rating."

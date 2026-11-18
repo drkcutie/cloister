@@ -302,8 +302,12 @@ enum class Reason(val code: String) {
     WeeklyReviewNotDue("weekly_review_not_due"),
 
     // Codes from the backend or an enforcement service, never from this engine.
-    /** The backend kept a looser value out (tighten-only). */
-    LooseningNotAccepted("loosening_not_accepted"),
+    /** An enforcement service: a loosening goes through the account and applies tomorrow. */
+    TakesEffectTomorrow("takes_effect_tomorrow"),
+    /** An enforcement service: ritual completion, a Shutdown Delay or closing a Loose End go through the account. */
+    AccountRequired("account_required"),
+    /** The backend: a Block row can't be changed directly. */
+    BlockCannotBeChanged("block_cannot_be_changed"),
     NotSignedIn("not_signed_in"),
     /** The backend couldn't read the command. */
     InvalidCommand("invalid_command");
