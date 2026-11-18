@@ -91,7 +91,7 @@ fn the_ritual_walks_its_five_steps_and_each_one_holds_until_done() {
     let backend = Backend::at("2026-01-05T17:00:00Z");
     let mut flow = RitualFlow::open(&backend, Zone::Utc);
     assert_eq!(flow.step(), RitualStep::LooseEnds);
-    assert_eq!(flow.step().number(), "01");
+    assert_eq!(flow.number(), "01");
 
     // 01: at least one Loose End captured tonight.
     let held = flow.next(&backend).unwrap_err();
