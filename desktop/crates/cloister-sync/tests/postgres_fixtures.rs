@@ -211,6 +211,30 @@ fn sign_in_with_state(tx: &mut Transaction, scenario: &str, initial_state: &Valu
         )
         .unwrap();
     }
+    for l in &state.loose_ends {
+        tx.execute(
+            "insert into public.loose_ends (user_id, id, text, captured_at)
+             values ($1::text::uuid, $2, $3, $4::text::timestamptz)",
+            &[&user_id, &l.id, &l.text, &l.captured_at.to_rfc3339()],
+        )
+        .unwrap();
+    }
+    for r in &state.rituals {
+        tx.execute(
+            "insert into public.rituals (user_id, date, completed_at)
+             values ($1::text::uuid, $2::text::date, $3::text::timestamptz)",
+            &[&user_id, &r.date.to_string(), &r.completed_at.to_rfc3339()],
+        )
+        .unwrap();
+    }
+    for d in &state.shutdown_delays {
+        tx.execute(
+            "insert into public.shutdown_delays (user_id, date, used_at)
+             values ($1::text::uuid, $2::text::date, $3::text::timestamptz)",
+            &[&user_id, &d.date.to_string(), &d.used_at.to_rfc3339()],
+        )
+        .unwrap();
+    }
     tx.batch_execute("set local session_replication_role = origin")
         .unwrap();
     let claims = json!({ "sub": user_id, "role": "authenticated" }).to_string();
