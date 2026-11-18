@@ -1,0 +1,83 @@
+{
+  "name": "depth-rating",
+  "description": "A Depth Rating from 1 to 5 is recorded once, after a Deep Session ends; plain Blocks have none.",
+  "initial_state": {
+    "blocks": [
+      {
+        "id": "deep",
+        "starts_at": "2026-01-05T09:00:00Z",
+        "ends_at": "2026-01-05T10:00:00Z",
+        "blocklists": ["forums", "news", "shopping", "social", "video"],
+        "deep": true,
+        "intent": "Outline the talk"
+      },
+      {
+        "id": "plain",
+        "starts_at": "2026-01-05T09:00:00Z",
+        "ends_at": "2026-01-05T10:00:00Z",
+        "blocklists": ["forums", "news", "shopping", "social", "video"],
+        "deep": false
+      }
+    ]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:30:00Z",
+      "command": { "type": "record_depth_rating", "block_id": "deep", "rating": 4 },
+      "expect": { "outcome": "rejected", "reason": "deep_session_not_ended" }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "record_depth_rating", "block_id": "deep", "rating": 0 },
+      "expect": { "outcome": "rejected", "reason": "invalid_depth_rating" }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "record_depth_rating", "block_id": "deep", "rating": 6 },
+      "expect": { "outcome": "rejected", "reason": "invalid_depth_rating" }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "record_depth_rating", "block_id": "plain", "rating": 3 },
+      "expect": { "outcome": "rejected", "reason": "not_a_deep_session" }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "record_depth_rating", "block_id": "missing", "rating": 3 },
+      "expect": { "outcome": "rejected", "reason": "unknown_block" }
+    },
+    {
+      "server_time": "2026-01-05T10:05:00Z",
+      "command": { "type": "record_depth_rating", "block_id": "deep", "rating": 4 },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "deep",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:00:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true,
+              "intent": "Outline the talk",
+              "depth_rating": 4
+            },
+            {
+              "id": "plain",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:00:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": false
+            }
+          ]
+        },
+        "enforcement": { "blocked_domains": [] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T10:06:00Z",
+      "command": { "type": "record_depth_rating", "block_id": "deep", "rating": 2 },
+      "expect": { "outcome": "rejected", "reason": "depth_rating_already_recorded" }
+    }
+  ]
+}

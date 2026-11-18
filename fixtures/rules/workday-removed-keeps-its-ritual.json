@@ -1,0 +1,45 @@
+{
+  "name": "workday-removed-keeps-its-ritual",
+  "description": "Removing a Workday applies at once (a Rest Day from now), but a day that has begun keeps the Workday membership it had when it began: its ritual stays due and lapses as a Missed Ritual; past days keep theirs.",
+  "initial_state": {
+    "blocks": [],
+    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+    "settings_since": "2025-12-29T00:00:00Z",
+    "rituals": [{ "date": "2026-01-02", "completed_at": "2026-01-02T17:10:00Z" }]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T17:05:00Z",
+      "expect": { "enforcement": { "ritual": "due" } }
+    },
+    {
+      "server_time": "2026-01-05T17:05:00Z",
+      "command": { "type": "change_settings", "workdays": [2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "settings": { "workdays": [2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+          "settings_since": "2025-12-29T00:00:00Z",
+          "past_settings": [
+            { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00", "until": "2026-01-05T17:05:00Z" }
+          ],
+          "rituals": [{ "date": "2026-01-02", "completed_at": "2026-01-02T17:10:00Z" }]
+        },
+        "enforcement": { "ritual": "due", "blocked_domains_include": ["github.com", "youtube.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T20:00:00Z",
+      "expect": { "enforcement": { "ritual": "due" } }
+    },
+    {
+      "server_time": "2026-01-06T09:30:00Z",
+      "expect": { "enforcement": { "ritual": "missed", "blocked_domains": [] } }
+    },
+    {
+      "server_time": "2026-01-12T17:05:00Z",
+      "expect": { "enforcement": { "ritual": "due", "blocked_domains_include": ["github.com"] } }
+    }
+  ]
+}

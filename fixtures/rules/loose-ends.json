@@ -1,0 +1,41 @@
+{
+  "name": "loose-ends",
+  "description": "Loose Ends are a persistent list: captured with a trimmed, non-blank text, kept between days until closed.",
+  "initial_state": {
+    "blocks": [],
+    "loose_ends": [{ "id": "l0", "text": "Reply to Sam", "captured_at": "2026-01-04T17:05:00Z" }]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "capture_loose_end", "loose_end_id": "l1", "text": "   " },
+      "expect": { "outcome": "rejected", "reason": "invalid_loose_end" }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "capture_loose_end", "loose_end_id": "l1", "text": "  Book the venue " },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-05T10:01:00Z",
+      "command": { "type": "capture_loose_end", "loose_end_id": "l1", "text": "Again" },
+      "expect": { "outcome": "rejected", "reason": "duplicate_loose_end" }
+    },
+    {
+      "server_time": "2026-01-05T10:02:00Z",
+      "command": { "type": "close_loose_end", "loose_end_id": "nope" },
+      "expect": { "outcome": "rejected", "reason": "unknown_loose_end" }
+    },
+    {
+      "server_time": "2026-01-05T10:03:00Z",
+      "command": { "type": "close_loose_end", "loose_end_id": "l0" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "loose_ends": [{ "id": "l1", "text": "Book the venue", "captured_at": "2026-01-05T10:00:00Z" }]
+        }
+      }
+    }
+  ]
+}

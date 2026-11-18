@@ -1,0 +1,131 @@
+{
+  "name": "blocklist-removals-take-effect-tomorrow",
+  "description": "Removing a domain or app from a Blocklist is stored as pending and takes effect at the next day boundary (local midnight); adding it back cancels the removal immediately.",
+  "initial_state": {
+    "blocks": [],
+    "blocklist_entries": [{ "blocklist": "work", "kind": "domain", "entry": "figma.com" }]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "remove_blocklist_entry", "blocklist": "forums", "kind": "domain", "entry": "Reddit.com" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "blocklist_entries": [{ "blocklist": "work", "kind": "domain", "entry": "figma.com" }],
+          "blocklist_removals": [
+            { "blocklist": "forums", "kind": "domain", "entry": "reddit.com", "effective_at": "2026-01-06T00:00:00Z" }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 60 },
+      "expect": { "outcome": "accepted", "enforcement": { "blocked_domains_include": ["reddit.com", "redd.it"] } }
+    },
+    {
+      "server_time": "2026-01-05T09:01:00Z",
+      "command": { "type": "remove_blocklist_entry", "blocklist": "forums", "kind": "domain", "entry": "reddit.com" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-05T09:02:00Z",
+      "command": { "type": "remove_blocklist_entry", "blocklist": "forums", "kind": "domain", "entry": "example.com" },
+      "expect": { "outcome": "rejected", "reason": "unknown_entry" }
+    },
+    {
+      "server_time": "2026-01-05T09:02:00Z",
+      "command": { "type": "remove_blocklist_entry", "blocklist": "forums", "kind": "domain", "entry": "not a domain" },
+      "expect": { "outcome": "rejected", "reason": "invalid_entry" }
+    },
+    {
+      "server_time": "2026-01-05T09:02:00Z",
+      "command": { "type": "remove_blocklist_entry", "blocklist": "gaming", "kind": "domain", "entry": "reddit.com" },
+      "expect": { "outcome": "rejected", "reason": "unknown_blocklist" }
+    },
+    {
+      "server_time": "2026-01-05T09:03:00Z",
+      "command": { "type": "remove_blocklist_entry", "blocklist": "work", "kind": "domain", "entry": "figma.com" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:00:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true
+            }
+          ],
+          "blocklist_entries": [{ "blocklist": "work", "kind": "domain", "entry": "figma.com" }],
+          "blocklist_removals": [
+            { "blocklist": "forums", "kind": "domain", "entry": "reddit.com", "effective_at": "2026-01-06T00:00:00Z" },
+            { "blocklist": "work", "kind": "domain", "entry": "figma.com", "effective_at": "2026-01-06T00:00:00Z" }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T23:59:59Z",
+      "command": { "type": "start_block", "block_id": "b2", "minutes": 60, "blocklists": ["work"] },
+      "expect": { "outcome": "accepted", "enforcement": { "blocked_domains_include": ["reddit.com", "redd.it", "figma.com"] } }
+    },
+    {
+      "server_time": "2026-01-06T00:00:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains_include": ["news.ycombinator.com", "github.com"],
+          "blocked_domains_exclude": ["reddit.com", "redd.it", "redditmedia.com", "figma.com"]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-06T00:10:00Z",
+      "command": { "type": "remove_blocklist_entry", "blocklist": "forums", "kind": "domain", "entry": "reddit.com" },
+      "expect": { "outcome": "rejected", "reason": "unknown_entry" }
+    },
+    {
+      "server_time": "2026-01-06T00:11:00Z",
+      "command": { "type": "add_blocklist_entry", "blocklist": "forums", "kind": "domain", "entry": "reddit.com" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:00:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true
+            },
+            {
+              "id": "b2",
+              "starts_at": "2026-01-05T23:59:59Z",
+              "ends_at": "2026-01-06T00:59:59Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video", "work"],
+              "deep": true
+            }
+          ],
+          "blocklist_entries": [{ "blocklist": "work", "kind": "domain", "entry": "figma.com" }],
+          "blocklist_removals": [
+            { "blocklist": "work", "kind": "domain", "entry": "figma.com", "effective_at": "2026-01-06T00:00:00Z" }
+          ]
+        },
+        "enforcement": { "blocked_domains_include": ["reddit.com", "redd.it"], "blocked_domains_exclude": ["figma.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-06T00:12:00Z",
+      "command": { "type": "remove_blocklist_entry", "blocklist": "social", "kind": "app", "entry": "com.discord" },
+      "expect": { "outcome": "accepted", "enforcement": { "blocked_apps": ["com.Slack", "com.discord", "com.hnc.Discord", "com.microsoft.teams", "com.microsoft.teams2", "com.tinyspeck.slackmacgap"] } }
+    },
+    {
+      "server_time": "2026-01-07T00:00:00Z",
+      "command": { "type": "start_block", "block_id": "b3", "minutes": 30 },
+      "expect": { "outcome": "accepted", "enforcement": { "blocked_apps": ["com.hnc.Discord"] } }
+    }
+  ]
+}

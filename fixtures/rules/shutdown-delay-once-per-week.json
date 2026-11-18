@@ -1,0 +1,69 @@
+{
+  "name": "shutdown-delay-once-per-week",
+  "description": "One Shutdown Delay per ISO week, used before Shutdown Time on a Workday, pushes both the ritual and Evening Lockdown back 30 minutes.",
+  "initial_state": {
+    "blocks": [],
+    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" }
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T08:00:00Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": { "outcome": "rejected", "reason": "evening_lockdown" }
+    },
+    {
+      "server_time": "2026-01-05T16:00:00Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+          "shutdown_delays": [{ "date": "2026-01-05", "used_at": "2026-01-05T16:00:00Z" }]
+        },
+        "enforcement": { "ritual": "delayed", "blocked_domains": [] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T17:00:00Z",
+      "expect": { "enforcement": { "ritual": "delayed", "blocked_domains": [], "blocked_apps": [] } }
+    },
+    {
+      "server_time": "2026-01-05T17:15:00Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": { "outcome": "rejected", "reason": "shutdown_delay_used" }
+    },
+    {
+      "server_time": "2026-01-05T17:15:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 10, "intent": "Last push" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-05T17:30:00Z",
+      "expect": { "enforcement": { "ritual": "due", "blocked_domains_include": ["github.com", "slack.com", "youtube.com"] } }
+    },
+    {
+      "server_time": "2026-01-06T09:00:00Z",
+      "expect": { "enforcement": { "ritual": "missed" } }
+    },
+    {
+      "server_time": "2026-01-06T16:00:00Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": { "outcome": "rejected", "reason": "shutdown_delay_used" }
+    },
+    {
+      "server_time": "2026-01-06T17:00:00Z",
+      "expect": { "enforcement": { "ritual": "due", "blocked_domains_include": ["github.com"] } }
+    },
+    {
+      "server_time": "2026-01-11T12:00:00Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": { "outcome": "rejected", "reason": "rest_day" }
+    },
+    {
+      "server_time": "2026-01-12T16:59:59Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": { "outcome": "accepted", "enforcement": { "ritual": "delayed" } }
+    }
+  ]
+}

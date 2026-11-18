@@ -1,0 +1,66 @@
+{
+  "name": "settings-validation",
+  "description": "Settings need Workdays from 1 to 7 without repeats and HH:MM times with Workday Start before Shutdown Time; the time zone is set with the first settings and can't change after.",
+  "initial_state": { "blocks": [] },
+  "steps": [
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "change_settings", "workdays": [1, 2], "workday_start": "09:00", "shutdown_time": "17:00", "time_zone": "Mars/Olympus" },
+      "expect": { "outcome": "rejected", "reason": "unknown_time_zone" }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "change_settings", "workdays": [1, 2], "workday_start": "9:00", "shutdown_time": "17:00" },
+      "expect": { "outcome": "rejected", "reason": "invalid_settings" }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "change_settings", "workdays": [1, 2], "workday_start": "09:00", "shutdown_time": "24:00" },
+      "expect": { "outcome": "rejected", "reason": "invalid_settings" }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "change_settings", "workdays": [1, 2], "workday_start": "17:00", "shutdown_time": "17:00" },
+      "expect": { "outcome": "rejected", "reason": "invalid_settings" }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "change_settings", "workdays": [1, 8], "workday_start": "09:00", "shutdown_time": "17:00" },
+      "expect": { "outcome": "rejected", "reason": "invalid_settings" }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "change_settings", "workdays": [0, 1], "workday_start": "09:00", "shutdown_time": "17:00" },
+      "expect": { "outcome": "rejected", "reason": "invalid_settings" }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "change_settings", "workdays": [1, 1], "workday_start": "09:00", "shutdown_time": "17:00" },
+      "expect": { "outcome": "rejected", "reason": "invalid_settings" }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "change_settings", "workdays": [], "workday_start": "09:00", "shutdown_time": "17:00", "time_zone": "Europe/Paris" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "time_zone": "Europe/Paris",
+          "settings": { "workdays": [], "workday_start": "09:00", "shutdown_time": "17:00" },
+          "settings_since": "2026-01-05T10:00:00Z"
+        },
+        "enforcement": { "blocked_domains_include": ["github.com", "youtube.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T11:00:00Z",
+      "command": { "type": "change_settings", "workdays": [], "workday_start": "09:00", "shutdown_time": "17:00", "time_zone": "Europe/London" },
+      "expect": { "outcome": "rejected", "reason": "time_zone_cannot_change" }
+    },
+    {
+      "server_time": "2026-01-05T11:00:00Z",
+      "command": { "type": "change_settings", "workdays": [], "workday_start": "09:00", "shutdown_time": "17:00", "time_zone": "Europe/Paris" },
+      "expect": { "outcome": "accepted" }
+    }
+  ]
+}

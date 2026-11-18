@@ -1,0 +1,116 @@
+{
+  "name": "settings-tighten-now-loosen-tomorrow",
+  "description": "A settings change applies its stricter part (fewer Workdays, later Workday Start, earlier Shutdown Time) at once and its looser part from the next day boundary.",
+  "initial_state": { "blocks": [] },
+  "steps": [
+    {
+      "server_time": "2026-01-05T14:00:00Z",
+      "command": { "type": "change_settings", "workdays": [5, 1, 2, 3, 4], "workday_start": "09:00", "shutdown_time": "17:00", "time_zone": "America/New_York" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "time_zone": "America/New_York",
+          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+          "settings_since": "2026-01-05T14:00:00Z"
+        },
+        "enforcement": { "blocked_domains": [] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T20:00:00Z",
+      "command": { "type": "change_settings", "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "15:00" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "time_zone": "America/New_York",
+          "past_settings": [
+            { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00", "until": "2026-01-05T20:00:00Z" }
+          ],
+          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "15:00" },
+          "settings_since": "2026-01-05T14:00:00Z"
+        },
+        "enforcement": { "blocked_domains_include": ["github.com", "youtube.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T21:00:00Z",
+      "command": { "type": "change_settings", "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "time_zone": "America/New_York",
+          "past_settings": [
+            { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00", "until": "2026-01-05T20:00:00Z" }
+          ],
+          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "15:00" },
+          "settings_since": "2026-01-05T14:00:00Z",
+          "pending_settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00", "effective_at": "2026-01-06T05:00:00Z" }
+        },
+        "enforcement": { "blocked_domains_include": ["github.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-06T04:59:59Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["github.com"] } }
+    },
+    {
+      "server_time": "2026-01-06T15:00:00Z",
+      "expect": { "enforcement": { "blocked_domains": [] } }
+    },
+    {
+      "server_time": "2026-01-06T15:00:00Z",
+      "command": { "type": "change_settings", "workdays": [1, 2, 3, 4, 5, 6], "workday_start": "08:00", "shutdown_time": "16:00" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "time_zone": "America/New_York",
+          "past_settings": [
+            { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00", "until": "2026-01-05T20:00:00Z" },
+            { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "15:00", "until": "2026-01-06T05:00:00Z" },
+            { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00", "until": "2026-01-06T15:00:00Z" }
+          ],
+          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "16:00" },
+          "settings_since": "2026-01-05T14:00:00Z",
+          "pending_settings": { "workdays": [1, 2, 3, 4, 5, 6], "workday_start": "08:00", "shutdown_time": "16:00", "effective_at": "2026-01-07T05:00:00Z" }
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-06T21:00:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["github.com"] } }
+    },
+    {
+      "server_time": "2026-01-07T13:30:00Z",
+      "expect": { "enforcement": { "blocked_domains": [] } }
+    },
+    {
+      "server_time": "2026-01-10T17:00:00Z",
+      "expect": { "enforcement": { "blocked_domains": [] } }
+    },
+    {
+      "server_time": "2026-01-10T17:00:00Z",
+      "command": { "type": "change_settings", "workdays": [1, 2, 3, 4, 5], "workday_start": "08:00", "shutdown_time": "16:00" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "time_zone": "America/New_York",
+          "past_settings": [
+            { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00", "until": "2026-01-05T20:00:00Z" },
+            { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "15:00", "until": "2026-01-06T05:00:00Z" },
+            { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00", "until": "2026-01-06T15:00:00Z" },
+            { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "16:00", "until": "2026-01-07T05:00:00Z" },
+            { "workdays": [1, 2, 3, 4, 5, 6], "workday_start": "08:00", "shutdown_time": "16:00", "until": "2026-01-10T17:00:00Z" }
+          ],
+          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "08:00", "shutdown_time": "16:00" },
+          "settings_since": "2026-01-05T14:00:00Z"
+        },
+        "enforcement": { "blocked_domains_include": ["github.com", "youtube.com"] }
+      }
+    }
+  ]
+}

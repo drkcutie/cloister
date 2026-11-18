@@ -1,0 +1,117 @@
+{
+  "name": "ritual-completion",
+  "description": "Completing the due Shutdown Ritual needs a Loose End captured since it became due, a Day Plan for the next Workday with a deep Slot covering the whole Workday, and \"Shutdown complete\" typed exactly.",
+  "initial_state": {
+    "blocks": [],
+    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+    "loose_ends": [{ "id": "l0", "text": "Reply to Sam", "captured_at": "2026-01-05T16:30:00Z" }]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T17:01:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete" },
+      "expect": { "outcome": "rejected", "reason": "loose_end_required" }
+    },
+    {
+      "server_time": "2026-01-05T17:02:00Z",
+      "command": { "type": "capture_loose_end", "loose_end_id": "l1", "text": "Send the invoice" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-05T17:03:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete" },
+      "expect": { "outcome": "rejected", "reason": "day_plan_required" }
+    },
+    {
+      "server_time": "2026-01-05T17:04:00Z",
+      "command": {
+        "type": "write_day_plan", "date": "2026-01-06",
+        "starts_at": "2026-01-06T09:00:00Z", "ends_at": "2026-01-06T17:00:00Z",
+        "slots": [{ "id": "t1", "starts_at": "2026-01-06T09:00:00Z", "ends_at": "2026-01-06T17:00:00Z", "label": "Admin" }]
+      },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-05T17:05:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete" },
+      "expect": { "outcome": "rejected", "reason": "deep_slot_required" }
+    },
+    {
+      "server_time": "2026-01-05T17:06:00Z",
+      "command": {
+        "type": "write_day_plan", "date": "2026-01-06",
+        "starts_at": "2026-01-06T09:00:00Z", "ends_at": "2026-01-06T17:00:00Z",
+        "slots": [
+          { "id": "t1", "starts_at": "2026-01-06T09:00:00Z", "ends_at": "2026-01-06T11:00:00Z", "label": "Draft chapter 4", "deep": true },
+          { "id": "t2", "starts_at": "2026-01-06T12:00:00Z", "ends_at": "2026-01-06T17:00:00Z", "label": "Admin" }
+        ]
+      },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-05T17:07:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete" },
+      "expect": { "outcome": "rejected", "reason": "workday_not_covered" }
+    },
+    {
+      "server_time": "2026-01-05T17:08:00Z",
+      "command": {
+        "type": "write_day_plan", "date": "2026-01-06",
+        "starts_at": "2026-01-06T09:00:00Z", "ends_at": "2026-01-06T17:00:00Z",
+        "slots": [
+          { "id": "t1", "starts_at": "2026-01-06T09:00:00Z", "ends_at": "2026-01-06T11:00:00Z", "label": "Draft chapter 4", "deep": true },
+          { "id": "t2", "starts_at": "2026-01-06T11:00:00Z", "ends_at": "2026-01-06T17:00:00Z", "label": "Admin" }
+        ]
+      },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-05T17:09:00Z",
+      "command": { "type": "complete_ritual", "typed": "shutdown complete" },
+      "expect": { "outcome": "rejected", "reason": "confirmation_mismatch" }
+    },
+    {
+      "server_time": "2026-01-05T17:09:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete " },
+      "expect": { "outcome": "rejected", "reason": "confirmation_mismatch" }
+    },
+    {
+      "server_time": "2026-01-05T17:10:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+          "loose_ends": [
+            { "id": "l0", "text": "Reply to Sam", "captured_at": "2026-01-05T16:30:00Z" },
+            { "id": "l1", "text": "Send the invoice", "captured_at": "2026-01-05T17:02:00Z" }
+          ],
+          "day_plans": [{
+            "date": "2026-01-06", "starts_at": "2026-01-06T09:00:00Z", "ends_at": "2026-01-06T17:00:00Z",
+            "planned_deep_minutes": 120,
+            "slots": [
+              { "id": "t1", "starts_at": "2026-01-06T09:00:00Z", "ends_at": "2026-01-06T11:00:00Z", "label": "Draft chapter 4", "deep": true },
+              { "id": "t2", "starts_at": "2026-01-06T11:00:00Z", "ends_at": "2026-01-06T17:00:00Z", "label": "Admin", "deep": false }
+            ]
+          }],
+          "rituals": [{ "date": "2026-01-05", "completed_at": "2026-01-05T17:10:00Z" }]
+        },
+        "enforcement": { "ritual": "completed", "blocked_domains_include": ["github.com", "youtube.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T17:11:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete" },
+      "expect": { "outcome": "rejected", "reason": "ritual_already_completed" }
+    },
+    {
+      "server_time": "2026-01-06T08:59:59Z",
+      "expect": { "enforcement": { "ritual": "completed" } }
+    },
+    {
+      "server_time": "2026-01-06T09:00:00Z",
+      "expect": { "enforcement": { "ritual": "none", "blocked_domains_include": ["youtube.com"], "blocked_domains_exclude": ["github.com"] } }
+    }
+  ]
+}

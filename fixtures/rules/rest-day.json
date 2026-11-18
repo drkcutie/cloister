@@ -1,0 +1,40 @@
+{
+  "name": "rest-day",
+  "description": "A day that isn't a Workday is a Rest Day: the Work List and the Distraction List (without categories opted out) are blocked all day, from midnight to the next Workday Start.",
+  "initial_state": {
+    "blocks": [],
+    "time_zone": "America/New_York",
+    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+    "blocklist_opt_outs": [{ "blocklist": "news", "effective_at": "2026-01-01T05:00:00Z" }]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-09T17:00:00Z",
+      "expect": { "enforcement": { "blocked_domains": [] } }
+    },
+    {
+      "server_time": "2026-01-09T22:00:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["github.com", "youtube.com"], "blocked_domains_exclude": ["cnn.com", "nytimes.com"] } }
+    },
+    {
+      "server_time": "2026-01-10T05:00:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["github.com", "reddit.com"] } }
+    },
+    {
+      "server_time": "2026-01-10T17:00:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["github.com", "notion.so", "instagram.com"], "blocked_domains_exclude": ["cnn.com"] } }
+    },
+    {
+      "server_time": "2026-01-11T21:30:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["linear.app", "tiktok.com"] } }
+    },
+    {
+      "server_time": "2026-01-12T13:59:59Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["gitlab.com"] } }
+    },
+    {
+      "server_time": "2026-01-12T14:00:00Z",
+      "expect": { "enforcement": { "blocked_domains": [], "blocked_apps": [] } }
+    }
+  ]
+}

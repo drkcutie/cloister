@@ -1,0 +1,62 @@
+{
+  "name": "block-cannot-be-shortened",
+  "description": "A Block's end can move later but never earlier, and an ended Block can't be revived.",
+  "initial_state": { "blocks": [] },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 60 },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-05T09:10:00Z",
+      "command": { "type": "extend_block", "block_id": "b1", "ends_at": "2026-01-05T09:30:00Z" },
+      "expect": { "outcome": "rejected", "reason": "block_cannot_be_shortened" }
+    },
+    {
+      "server_time": "2026-01-05T09:40:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["youtube.com"] } }
+    },
+    {
+      "server_time": "2026-01-05T09:41:00Z",
+      "command": { "type": "extend_block", "block_id": "b1", "ends_at": "2026-01-05T10:00:00Z" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-05T09:42:00Z",
+      "command": { "type": "extend_block", "block_id": "b1", "ends_at": "2026-01-05T10:30:00Z" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:30:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T10:15:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["youtube.com", "youtu.be"] } }
+    },
+    {
+      "server_time": "2026-01-05T10:30:00Z",
+      "expect": { "enforcement": { "blocked_domains": [] } }
+    },
+    {
+      "server_time": "2026-01-05T10:31:00Z",
+      "command": { "type": "extend_block", "block_id": "b1", "ends_at": "2026-01-05T11:00:00Z" },
+      "expect": { "outcome": "rejected", "reason": "block_has_ended" }
+    },
+    {
+      "server_time": "2026-01-05T10:32:00Z",
+      "command": { "type": "extend_block", "block_id": "nope", "ends_at": "2026-01-05T11:00:00Z" },
+      "expect": { "outcome": "rejected", "reason": "unknown_block" }
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "name": "start-block",
+  "description": "Starting a Block blocks the Distraction List, including related domains, until it ends.",
+  "initial_state": { "blocks": [] },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 60 },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:00:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true
+            }
+          ]
+        },
+        "enforcement": {
+          "blocked_domains_include": ["youtube.com", "youtu.be", "googlevideo.com", "reddit.com"],
+          "blocked_domains_exclude": ["github.com", "example.com"],
+          "blocked_apps": ["com.discord", "com.hnc.Discord"],
+          "ritual": "none"
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:59:59Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["youtube.com"] } }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "expect": { "enforcement": { "blocked_domains": [], "blocked_apps": [], "ritual": "none" } }
+    }
+  ]
+}

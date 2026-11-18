@@ -1,0 +1,39 @@
+{
+  "name": "block-cannot-be-cancelled",
+  "description": "Cancelling a Block is always rejected and enforcement continues until its end.",
+  "initial_state": {
+    "blocks": [
+      {
+        "id": "b1",
+        "starts_at": "2026-01-05T09:00:00Z",
+        "ends_at": "2026-01-05T11:00:00Z",
+        "blocklists": ["forums", "news", "shopping", "social", "video"],
+        "deep": false
+      }
+    ]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:01:00Z",
+      "command": { "type": "cancel_block", "block_id": "b1" },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "block_cannot_be_cancelled",
+        "enforcement": { "blocked_domains_include": ["youtube.com", "reddit.com", "x.com", "twitter.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:02:00Z",
+      "command": { "type": "cancel_block", "block_id": "missing" },
+      "expect": { "outcome": "rejected", "reason": "unknown_block" }
+    },
+    {
+      "server_time": "2026-01-05T10:59:59Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["youtube.com"] } }
+    },
+    {
+      "server_time": "2026-01-05T11:00:00Z",
+      "expect": { "enforcement": { "blocked_domains": [], "blocked_apps": [] } }
+    }
+  ]
+}

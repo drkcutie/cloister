@@ -1,0 +1,31 @@
+[package]
+name = "cloister-app"
+description = "The Cloister desktop app (GPUI): begin and live through Deep Sessions."
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "cloister-app"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+cloister-app-model = { path = "../cloister-app-model" }
+cloister-core = { path = "../cloister-core" }
+cloister-enforcer = { path = "../cloister-enforcer" }
+cloister-sync = { path = "../cloister-sync" }
+# Pin exactly: gpui-kit re-exports GPUI (gpui-pre) and moves fast. See desktop/README.md.
+gpui-kit = "=0.10.0"
+tray-icon = "0.26"
+
+# The Shutdown Ritual's kiosk: presentation options and window levels, which GPUI doesn't
+# expose. Same versions GPUI's macOS platform already uses.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow", "NSScreen", "NSRunningApplication"] }
+
+# Windows: the keyboard hook and topmost windows.
+[target.'cfg(windows)'.dependencies]
+cloister-kiosk = { path = "../cloister-kiosk" }

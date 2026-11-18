@@ -1,0 +1,17 @@
+[package]
+name = "cloister-app-model"
+description = "What the Cloister desktop app shows and does, without any UI toolkit: the Begin form, the running Deep Session, the Depth Rating prompt, talking to the enforcement service over IPC."
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+chrono.workspace = true
+chrono-tz.workspace = true
+cloister-core = { path = "../cloister-core" }
+cloister-enforcer = { path = "../cloister-enforcer" }
+cloister-sync = { path = "../cloister-sync" }
+iana-time-zone = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

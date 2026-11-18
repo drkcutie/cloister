@@ -1,0 +1,400 @@
+{
+  "name": "schedule-validation",
+  "description": "A Schedule has a known time zone, distinct ISO weekdays, HH:MM times, labelled non-overlapping Slots inside its day, and shares no weekday with another Schedule; its times are local to its time zone.",
+  "initial_state": {
+    "blocks": []
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "x",
+        "time_zone": "Mars/Olympus",
+        "weekdays": [
+          1
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": []
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "unknown_time_zone"
+      }
+    },
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "x",
+        "time_zone": "UTC",
+        "weekdays": [
+          8
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": []
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_schedule"
+      }
+    },
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "x",
+        "time_zone": "UTC",
+        "weekdays": [
+          0
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": []
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_schedule"
+      }
+    },
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "x",
+        "time_zone": "UTC",
+        "weekdays": [
+          1,
+          1
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": []
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_schedule"
+      }
+    },
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "x",
+        "time_zone": "UTC",
+        "weekdays": [
+          1
+        ],
+        "starts": "8:00",
+        "ends": "17:00",
+        "slots": []
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_schedule"
+      }
+    },
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "x",
+        "time_zone": "UTC",
+        "weekdays": [
+          1
+        ],
+        "starts": "17:00",
+        "ends": "08:00",
+        "slots": []
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_schedule"
+      }
+    },
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "x",
+        "time_zone": "UTC",
+        "weekdays": [
+          1
+        ],
+        "starts": "08:00",
+        "ends": "24:00",
+        "slots": []
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_schedule"
+      }
+    },
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "x",
+        "time_zone": "UTC",
+        "weekdays": [
+          1
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": [
+          {
+            "starts": "07:00",
+            "ends": "09:00",
+            "label": "Write",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_slot"
+      }
+    },
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "x",
+        "time_zone": "UTC",
+        "weekdays": [
+          1
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": [
+          {
+            "starts": "09:00",
+            "ends": "9:30",
+            "label": "Write",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_slot"
+      }
+    },
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "x",
+        "time_zone": "UTC",
+        "weekdays": [
+          1
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": [
+          {
+            "starts": "09:00",
+            "ends": "10:00",
+            "label": " ",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_slot"
+      }
+    },
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "x",
+        "time_zone": "UTC",
+        "weekdays": [
+          1
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": [
+          {
+            "starts": "09:00",
+            "ends": "10:00",
+            "label": "A",
+            "deep": true
+          },
+          {
+            "starts": "09:30",
+            "ends": "11:00",
+            "label": "B",
+            "deep": false
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "slots_overlap"
+      }
+    },
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "mornings",
+        "time_zone": "Asia/Manila",
+        "weekdays": [
+          1
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": [
+          {
+            "starts": "09:00",
+            "ends": "10:00",
+            "label": "Deep work",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "schedules": [
+            {
+              "id": "mornings",
+              "time_zone": "Asia/Manila",
+              "weekdays": [
+                1
+              ],
+              "starts": "08:00",
+              "ends": "17:00",
+              "slots": [
+                {
+                  "starts": "09:00",
+                  "ends": "10:00",
+                  "label": "Deep work",
+                  "deep": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "weekends",
+        "time_zone": "UTC",
+        "weekdays": [
+          6,
+          7,
+          1
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": []
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "schedules_overlap"
+      }
+    },
+    {
+      "server_time": "2026-01-04T00:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "weekends",
+        "time_zone": "UTC",
+        "weekdays": [
+          6,
+          7
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": []
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "schedules": [
+            {
+              "id": "mornings",
+              "time_zone": "Asia/Manila",
+              "weekdays": [
+                1
+              ],
+              "starts": "08:00",
+              "ends": "17:00",
+              "slots": [
+                {
+                  "starts": "09:00",
+                  "ends": "10:00",
+                  "label": "Deep work",
+                  "deep": true
+                }
+              ]
+            },
+            {
+              "id": "weekends",
+              "time_zone": "UTC",
+              "weekdays": [
+                6,
+                7
+              ],
+              "starts": "08:00",
+              "ends": "17:00",
+              "slots": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T00:59:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains": [],
+          "blocked_apps": []
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T01:00:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains_include": [
+            "youtube.com",
+            "facebook.com"
+          ],
+          "blocked_domains_exclude": [
+            "github.com"
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T02:00:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains": [],
+          "blocked_apps": []
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains": [],
+          "blocked_apps": []
+        }
+      }
+    }
+  ]
+}

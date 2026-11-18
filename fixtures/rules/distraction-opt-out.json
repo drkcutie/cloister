@@ -1,0 +1,144 @@
+{
+  "name": "distraction-opt-out",
+  "description": "Opting out of a default Distraction List category is a loosening change that takes effect tomorrow and never touches a running Block; opting back in applies immediately; the Work List can't be opted out of.",
+  "initial_state": { "blocks": [] },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "opt_out_of_blocklist", "blocklist": "news" },
+      "expect": {
+        "outcome": "accepted",
+        "state": { "blocks": [], "blocklist_opt_outs": [{ "blocklist": "news", "effective_at": "2026-01-06T00:00:00Z" }] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:01:00Z",
+      "command": { "type": "opt_out_of_blocklist", "blocklist": "news" },
+      "expect": {
+        "outcome": "accepted",
+        "state": { "blocks": [], "blocklist_opt_outs": [{ "blocklist": "news", "effective_at": "2026-01-06T00:00:00Z" }] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:02:00Z",
+      "command": { "type": "opt_out_of_blocklist", "blocklist": "work" },
+      "expect": { "outcome": "rejected", "reason": "cannot_opt_out" }
+    },
+    {
+      "server_time": "2026-01-05T09:02:00Z",
+      "command": { "type": "opt_out_of_blocklist", "blocklist": "gaming" },
+      "expect": { "outcome": "rejected", "reason": "unknown_blocklist" }
+    },
+    {
+      "server_time": "2026-01-05T23:30:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 60 },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T23:30:00Z",
+              "ends_at": "2026-01-06T00:30:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true
+            }
+          ],
+          "blocklist_opt_outs": [{ "blocklist": "news", "effective_at": "2026-01-06T00:00:00Z" }]
+        },
+        "enforcement": { "blocked_domains_include": ["cnn.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-06T00:15:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["cnn.com"] } }
+    },
+    {
+      "server_time": "2026-01-06T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b2", "minutes": 30 },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T23:30:00Z",
+              "ends_at": "2026-01-06T00:30:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true
+            },
+            {
+              "id": "b2",
+              "starts_at": "2026-01-06T09:00:00Z",
+              "ends_at": "2026-01-06T09:30:00Z",
+              "blocklists": ["forums", "shopping", "social", "video"],
+              "deep": true
+            }
+          ],
+          "blocklist_opt_outs": [{ "blocklist": "news", "effective_at": "2026-01-06T00:00:00Z" }]
+        },
+        "enforcement": { "blocked_domains_include": ["youtube.com"], "blocked_domains_exclude": ["cnn.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-06T09:05:00Z",
+      "command": { "type": "start_block", "block_id": "b3", "minutes": 30, "blocklists": ["news"] },
+      "expect": { "outcome": "accepted", "enforcement": { "blocked_domains_include": ["cnn.com"] } }
+    },
+    {
+      "server_time": "2026-01-06T09:35:00Z",
+      "command": { "type": "start_block", "block_id": "b4", "minutes": 30 },
+      "expect": { "outcome": "accepted", "enforcement": { "blocked_domains_exclude": ["cnn.com"] } }
+    },
+    {
+      "server_time": "2026-01-06T09:36:00Z",
+      "command": { "type": "opt_in_to_blocklist", "blocklist": "news" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T23:30:00Z",
+              "ends_at": "2026-01-06T00:30:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true
+            },
+            {
+              "id": "b2",
+              "starts_at": "2026-01-06T09:00:00Z",
+              "ends_at": "2026-01-06T09:30:00Z",
+              "blocklists": ["forums", "shopping", "social", "video"],
+              "deep": true
+            },
+            {
+              "id": "b3",
+              "starts_at": "2026-01-06T09:05:00Z",
+              "ends_at": "2026-01-06T09:35:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true
+            },
+            {
+              "id": "b4",
+              "starts_at": "2026-01-06T09:35:00Z",
+              "ends_at": "2026-01-06T10:05:00Z",
+              "blocklists": ["forums", "shopping", "social", "video"],
+              "deep": true
+            }
+          ]
+        },
+        "enforcement": { "blocked_domains_include": ["cnn.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-06T09:37:00Z",
+      "command": { "type": "opt_in_to_blocklist", "blocklist": "news" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-06T09:37:00Z",
+      "command": { "type": "opt_in_to_blocklist", "blocklist": "gaming" },
+      "expect": { "outcome": "rejected", "reason": "unknown_blocklist" }
+    }
+  ]
+}

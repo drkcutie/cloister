@@ -1,0 +1,406 @@
+{
+  "name": "day-plan-validation",
+  "description": "A Day Plan has a positive length of at most 24 hours; its Slots are labelled, inside the day, don't overlap and have ids no other Slot or Block uses.",
+  "initial_state": {
+    "blocks": [
+      {
+        "id": "b1",
+        "starts_at": "2026-01-04T10:00:00Z",
+        "ends_at": "2026-01-04T11:00:00Z",
+        "blocklists": [
+          "forums",
+          "news",
+          "shopping",
+          "social",
+          "video"
+        ],
+        "deep": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T17:00:00Z",
+        "ends_at": "2026-01-05T08:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T09:00:00Z",
+            "ends_at": "2026-01-05T10:00:00Z",
+            "label": "Write",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_day_plan"
+      }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-06T08:01:00Z",
+        "slots": []
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_day_plan"
+      }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T09:00:00Z",
+            "ends_at": "2026-01-05T10:00:00Z",
+            "label": "   ",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_slot"
+      }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T10:00:00Z",
+            "ends_at": "2026-01-05T10:00:00Z",
+            "label": "Write",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_slot"
+      }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T07:30:00Z",
+            "ends_at": "2026-01-05T09:00:00Z",
+            "label": "Write",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_slot"
+      }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T16:00:00Z",
+            "ends_at": "2026-01-05T17:30:00Z",
+            "label": "Write",
+            "deep": false
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "invalid_slot"
+      }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T09:00:00Z",
+            "ends_at": "2026-01-05T10:00:00Z",
+            "label": "Write",
+            "deep": true
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T09:59:00Z",
+            "ends_at": "2026-01-05T11:00:00Z",
+            "label": "Read",
+            "deep": false
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "slots_overlap"
+      }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T09:00:00Z",
+            "ends_at": "2026-01-05T10:00:00Z",
+            "label": "Write",
+            "deep": true
+          },
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Read",
+            "deep": false
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "duplicate_slot"
+      }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T09:00:00Z",
+            "ends_at": "2026-01-05T10:00:00Z",
+            "label": "Write",
+            "deep": true
+          },
+          {
+            "id": "b1",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Read",
+            "deep": false
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "duplicate_slot"
+      }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T09:00:00Z",
+            "ends_at": "2026-01-05T10:00:00Z",
+            "label": "Write",
+            "deep": true
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T10:00:00Z",
+            "ends_at": "2026-01-05T11:00:00Z",
+            "label": "Read",
+            "deep": false
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-04T10:00:00Z",
+              "ends_at": "2026-01-04T11:00:00Z",
+              "blocklists": [
+                "forums",
+                "news",
+                "shopping",
+                "social",
+                "video"
+              ],
+              "deep": true
+            }
+          ],
+          "day_plans": [
+            {
+              "date": "2026-01-05",
+              "starts_at": "2026-01-05T08:00:00Z",
+              "ends_at": "2026-01-05T17:00:00Z",
+              "planned_deep_minutes": 60,
+              "slots": [
+                {
+                  "id": "s1",
+                  "starts_at": "2026-01-05T09:00:00Z",
+                  "ends_at": "2026-01-05T10:00:00Z",
+                  "label": "Write",
+                  "deep": true
+                },
+                {
+                  "id": "s2",
+                  "starts_at": "2026-01-05T10:00:00Z",
+                  "ends_at": "2026-01-05T11:00:00Z",
+                  "label": "Read",
+                  "deep": false
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-06",
+        "starts_at": "2026-01-06T08:00:00Z",
+        "ends_at": "2026-01-06T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-06T09:00:00Z",
+            "ends_at": "2026-01-06T10:00:00Z",
+            "label": "Write",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "duplicate_slot"
+      }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "start_block",
+        "block_id": "s2",
+        "minutes": 30
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "duplicate_block"
+      }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": []
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "slot_cannot_be_removed"
+      }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T07:00:00Z",
+        "ends_at": "2026-01-05T18:00:00Z",
+        "slots": [
+          {
+            "id": "s9",
+            "starts_at": "2026-01-05T15:00:00Z",
+            "ends_at": "2026-01-05T16:00:00Z",
+            "label": "Write",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-04T10:00:00Z",
+              "ends_at": "2026-01-04T11:00:00Z",
+              "blocklists": [
+                "forums",
+                "news",
+                "shopping",
+                "social",
+                "video"
+              ],
+              "deep": true
+            }
+          ],
+          "day_plans": [
+            {
+              "date": "2026-01-05",
+              "starts_at": "2026-01-05T07:00:00Z",
+              "ends_at": "2026-01-05T18:00:00Z",
+              "planned_deep_minutes": 60,
+              "slots": [
+                {
+                  "id": "s9",
+                  "starts_at": "2026-01-05T15:00:00Z",
+                  "ends_at": "2026-01-05T16:00:00Z",
+                  "label": "Write",
+                  "deep": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
