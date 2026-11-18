@@ -5,7 +5,7 @@ use gpui_kit::component::input::Input;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::{now, rating, MainView};
+use super::{now, rating, MainView, Screen};
 use crate::theme::{depth, radius, space, Palette, PaletteExt, Type};
 use crate::ui;
 
@@ -16,18 +16,43 @@ pub fn render(
     cx: &mut Context<MainView>,
 ) -> Div {
     let p = cx.palette();
-    div().size_full().flex().child(sidebar(&p, view)).child(
-        div()
-            .id("begin-scroll")
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            .overflow_y_scroll()
-            .child(main_column(this, view, window, cx)),
-    )
+    div()
+        .size_full()
+        .flex()
+        .child(sidebar(&p, view, Screen::Today, cx))
+        .child(
+            div()
+                .id("begin-scroll")
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .overflow_y_scroll()
+                .child(main_column(this, view, window, cx)),
+        )
 }
 
-fn sidebar(p: &Palette, view: &View) -> Div {
+pub(super) fn sidebar(
+    p: &Palette,
+    view: &View,
+    current: Screen,
+    cx: &mut Context<MainView>,
+) -> Div {
+    let item = |screen: Screen, text: &'static str| {
+        let on = screen == current;
+        Type::Body
+            .apply(div())
+            .id(text)
+            .h(px(44.))
+            .px(space::S3)
+            .flex()
+            .items_center()
+            .rounded(radius::CONTROL)
+            .text_size(px(15.))
+            .when(on, |d| d.bg(p.surface).font_weight(FontWeight::SEMIBOLD))
+            .when(!on, |d| d.text_color(p.ink_2).cursor_pointer())
+            .on_click(cx.listener(move |this, _, window, cx| this.show(screen, window, cx)))
+            .child(text)
+    };
     div()
         .w(px(240.))
         .flex_none()
@@ -40,21 +65,13 @@ fn sidebar(p: &Palette, view: &View) -> Div {
         .gap(px(28.))
         .child(div().px(space::S3).child(ui::wordmark(p, 26.)))
         .child(
-            div().flex().flex_col().gap(px(2.)).child(
-                // The only screen so far. Day Plan, Blocklists, Weekly Review and Devices
-                // join here as their tickets land.
-                Type::Body
-                    .apply(div())
-                    .h(px(44.))
-                    .px(space::S3)
-                    .flex()
-                    .items_center()
-                    .bg(p.surface)
-                    .rounded(radius::CONTROL)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(px(15.))
-                    .child("Today"),
-            ),
+            // Blocklists, Weekly Review and Devices join here as their tickets land.
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .child(item(Screen::Today, "Today"))
+                .child(item(Screen::DayPlan, "Day Plan")),
         )
         .child(
             div()

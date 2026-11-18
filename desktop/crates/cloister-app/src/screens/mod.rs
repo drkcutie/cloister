@@ -5,6 +5,7 @@
 //! (or a separate `Render` entity if it owns inputs), and choose it in `MainView::render`.
 
 mod begin;
+mod day_plan;
 mod rating;
 mod session;
 
@@ -19,8 +20,17 @@ use crate::state::{Cloister, CloisterHandle};
 use crate::theme::{PaletteExt, SANS};
 use crate::ui;
 
+/// The screen picked in the sidebar (a running Deep Session takes over whatever is picked).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Screen {
+    Today,
+    DayPlan,
+}
+
 pub struct MainView {
     cloister: Entity<Cloister>,
+    screen: Screen,
+    day_plan: Option<Entity<day_plan::DayPlanView>>,
     form: BeginForm,
     intent: Entity<InputState>,
     custom: Entity<InputState>,
@@ -67,6 +77,8 @@ impl MainView {
         intent.update(cx, |s, cx| s.focus(window, cx));
         MainView {
             cloister,
+            screen: Screen::Today,
+            day_plan: None,
             form: BeginForm::default(),
             intent,
             custom,
@@ -76,6 +88,14 @@ impl MainView {
             _hold_task: None,
             _subscriptions: subscriptions,
         }
+    }
+
+    fn show(&mut self, screen: Screen, window: &mut Window, cx: &mut Context<Self>) {
+        self.screen = screen;
+        if screen == Screen::DayPlan && self.day_plan.is_none() {
+            self.day_plan = Some(cx.new(|cx| day_plan::DayPlanView::new(window, cx)));
+        }
+        cx.notify();
     }
 
     fn choose_preset(&mut self, minutes: i64, window: &mut Window, cx: &mut Context<Self>) {
@@ -138,7 +158,17 @@ impl Render for MainView {
                 SharedString::from(format!("session-{}", active.block_id)),
                 session::render(self, &active, &view, window, cx),
             )),
-            None => root.child(ui::fade_in("begin", begin::render(self, &view, window, cx))),
+            None => match (self.screen, self.day_plan.clone()) {
+                (Screen::DayPlan, Some(plan)) => root.child(ui::fade_in(
+                    "day-plan",
+                    div()
+                        .size_full()
+                        .flex()
+                        .child(begin::sidebar(&cx.palette(), &view, Screen::DayPlan, cx))
+                        .child(div().flex_1().min_w_0().h_full().child(plan)),
+                )),
+                _ => root.child(ui::fade_in("begin", begin::render(self, &view, window, cx))),
+            },
         }
     }
 }
@@ -161,7 +191,14 @@ pub fn open_main_window(cx: &mut App) {
         ..Default::default()
     };
     if let Err(e) = gpui_kit::open_window(options, cx, |window, cx| {
-        cx.new(|cx| MainView::new(window, cx))
+        cx.new(|cx| {
+            let mut view = MainView::new(window, cx);
+            // Development aid: `CLOISTER_OPEN=day-plan` opens on the Day Plan screen.
+            if std::env::var("CLOISTER_OPEN").as_deref() == Ok("day-plan") {
+                view.show(Screen::DayPlan, window, cx);
+            }
+            view
+        })
     }) {
         eprintln!("cloister-app: opening the window failed: {e}");
     }
