@@ -232,16 +232,26 @@ impl Device {
         let backend = &self.inner.backend;
         let rows = self.online(backend.rest_get(
             &session,
-            "blocks?select=id,starts_at,ends_at,blocklists,deep,intent,depth_rating&order=starts_at,id",
+            "blocks?select=id,starts_at,ends_at,blocklists,deep,intent,depth_rating,extra_domains,extra_apps,quit_social&order=starts_at,id",
         ))?;
         let blocks: Vec<Block> =
             serde_json::from_value(rows).map_err(|e| Error::Protocol(e.to_string()))?;
+        // The account's Blocklist edits and time zone, in the engine's JSON form.
+        let state = self.online(backend.rest_post(&session, "rpc/state", json!({}), None))?;
+        let state: State =
+            serde_json::from_value(state).map_err(|e| Error::Protocol(e.to_string()))?;
         let server_now = self.fetch_server_now(&session)?;
         let changed = {
             let mut mirror = lock(&self.inner.mirror);
             let offset = (server_now - Utc::now()).num_milliseconds();
             mirror.set(OFFSET_KEY, &offset.to_string())?;
-            mirror.merge_blocks(&blocks)?
+            let blocks_changed = mirror.merge_blocks(&blocks)?;
+            let edits_changed = mirror.merge_blocklist_edits(
+                &state.time_zone,
+                &state.blocklist_edits(),
+                server_now,
+            )?;
+            blocks_changed || edits_changed
         };
         if changed {
             self.emit(SyncEvent::StateChanged);

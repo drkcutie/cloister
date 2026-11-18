@@ -1,5 +1,5 @@
 //! A minimal Supabase Realtime client (Phoenix channels, protocol vsn 1.0.0) for
-//! `postgres_changes` on the signed-in user's Blocks. Messages are hints: on each one the
+//! `postgres_changes` on the signed-in user's Blocks and Blocklist edits. Messages are hints: on each one the
 //! Device re-reads its Blocks over REST, so a missed message costs nothing but latency.
 
 use std::io::ErrorKind;
@@ -13,6 +13,13 @@ use tungstenite::{Message, WebSocket};
 use crate::{Backend, Error, Result, Session};
 
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(25);
+
+const TABLES: [&str; 4] = [
+    "blocks",
+    "blocklist_entries",
+    "blocklist_removals",
+    "blocklist_opt_outs",
+];
 
 pub(crate) struct Channel {
     ws: WebSocket<MaybeTlsStream<TcpStream>>,
@@ -45,6 +52,16 @@ impl Channel {
             last_heartbeat: Instant::now(),
         };
         channel.set_read_timeout(Duration::from_millis(500))?;
+        // Blocks and Blocklist edits: anything that changes what this Device enforces.
+        let changes: Vec<_> = TABLES
+            .iter()
+            .map(|table| {
+                json!({
+                    "event": "*", "schema": "public", "table": table,
+                    "filter": format!("user_id=eq.{}", session.user_id),
+                })
+            })
+            .collect();
         let join_ref = channel
             .send(
                 &channel.topic.clone(),
@@ -53,10 +70,7 @@ impl Channel {
                     "config": {
                         "broadcast": { "ack": false, "self": false },
                         "presence": { "enabled": false },
-                        "postgres_changes": [{
-                            "event": "*", "schema": "public", "table": "blocks",
-                            "filter": format!("user_id=eq.{}", session.user_id),
-                        }],
+                        "postgres_changes": changes,
                         "private": false,
                     },
                     "access_token": session.access_token,

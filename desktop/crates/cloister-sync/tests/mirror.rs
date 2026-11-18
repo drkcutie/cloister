@@ -1,7 +1,9 @@
 //! The local SQLite mirror: the enforcement source on a Device, online or offline.
 
 use chrono::{DateTime, Utc};
-use cloister_core::{enforcement, Block};
+use cloister_core::{
+    enforcement, Block, BlocklistEdits, BlocklistEntry, BlocklistRemoval, EntryKind,
+};
 use cloister_sync::Mirror;
 
 fn t(s: &str) -> DateTime<Utc> {
@@ -93,4 +95,62 @@ fn the_device_id_is_generated_once() {
     let again = Mirror::open(&path).unwrap().device_id().unwrap();
     assert_eq!(first, again);
     assert_eq!(first.len(), 36, "a UUID: {first}");
+}
+
+#[test]
+fn blocklist_edits_from_the_backend_never_loosen_before_tomorrow_here() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("m.sqlite");
+    let removal = |effective_at: &str| BlocklistRemoval {
+        blocklist: "forums".into(),
+        kind: EntryKind::Domain,
+        entry: "reddit.com".into(),
+        effective_at: t(effective_at),
+    };
+    let added = BlocklistEntry {
+        blocklist: "work".into(),
+        kind: EntryKind::App,
+        entry: "Figma".into(),
+    };
+    {
+        let mut mirror = Mirror::open(&path).unwrap();
+        let mut quit = block("q1", "2026-01-05T09:00:00Z", "2026-02-04T09:00:00Z");
+        quit.blocklists = vec!["social".into()];
+        quit.quit_social = true;
+        quit.extra_domains = vec!["example.com".into()];
+        mirror.merge_blocks(&[quit]).unwrap();
+        let changed = mirror
+            .merge_blocklist_edits(
+                "Europe/Paris",
+                &BlocklistEdits {
+                    entries: vec![added.clone()],
+                    // Claims to be in force already: here it waits for the next midnight.
+                    removals: vec![removal("2026-01-05T00:00:00Z")],
+                    opt_outs: vec![],
+                },
+                t("2026-01-05T09:00:00Z"),
+            )
+            .unwrap();
+        assert!(changed);
+    }
+    let mut mirror = Mirror::open(&path).unwrap();
+    let state = mirror.state().unwrap();
+    assert_eq!(state.time_zone, "Europe/Paris");
+    assert!(state.blocks[0].quit_social);
+    assert_eq!(state.blocks[0].extra_domains, ["example.com"]);
+    assert_eq!(state.blocklist_entries, [added.clone()]);
+    assert_eq!(state.blocklist_removals, [removal("2026-01-05T23:00:00Z")]);
+
+    // The backend dropped the removal (the entry was added back) and lost the addition:
+    // the removal goes, the addition stays.
+    mirror
+        .merge_blocklist_edits(
+            "Europe/Paris",
+            &BlocklistEdits::default(),
+            t("2026-01-05T10:00:00Z"),
+        )
+        .unwrap();
+    let state = mirror.state().unwrap();
+    assert!(state.blocklist_removals.is_empty());
+    assert_eq!(state.blocklist_entries, [added]);
 }

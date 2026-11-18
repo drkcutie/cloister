@@ -10,7 +10,7 @@
 
 use std::path::{Path, PathBuf};
 
-use cloister_core::{Command, State};
+use cloister_core::{Command, EntryKind, State};
 use postgres::{Client, NoTls, Transaction};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -94,9 +94,10 @@ fn sign_in_with_state(tx: &mut Transaction, scenario: &str, initial_state: &Valu
     for block in &state.blocks {
         tx.execute(
             "insert into public.blocks
-               (user_id, id, starts_at, ends_at, blocklists, deep, intent, depth_rating)
+               (user_id, id, starts_at, ends_at, blocklists, deep, intent, depth_rating,
+                extra_domains, extra_apps, quit_social)
              values ($1::text::uuid, $2, $3::text::timestamptz, $4::text::timestamptz, $5, $6, $7,
-                     $8::int::smallint)",
+                     $8::int::smallint, $9, $10, $11)",
             &[
                 &user_id,
                 &block.id,
@@ -106,7 +107,52 @@ fn sign_in_with_state(tx: &mut Transaction, scenario: &str, initial_state: &Valu
                 &block.deep,
                 &block.intent,
                 &block.depth_rating.map(i32::from),
+                &block.extra_domains,
+                &block.extra_apps,
+                &block.quit_social,
             ],
+        )
+        .unwrap();
+    }
+    tx.execute(
+        "update public.accounts set time_zone = $2 where user_id = $1::text::uuid",
+        &[&user_id, &state.time_zone],
+    )
+    .unwrap();
+    let kind = |k: EntryKind| {
+        serde_json::to_value(k)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    for e in &state.blocklist_entries {
+        tx.execute(
+            "insert into public.blocklist_entries (user_id, blocklist, kind, entry)
+             values ($1::text::uuid, $2, $3, $4)",
+            &[&user_id, &e.blocklist, &kind(e.kind), &e.entry],
+        )
+        .unwrap();
+    }
+    for r in &state.blocklist_removals {
+        tx.execute(
+            "insert into public.blocklist_removals (user_id, blocklist, kind, entry, effective_at)
+             values ($1::text::uuid, $2, $3, $4, $5::text::timestamptz)",
+            &[
+                &user_id,
+                &r.blocklist,
+                &kind(r.kind),
+                &r.entry,
+                &r.effective_at.to_rfc3339(),
+            ],
+        )
+        .unwrap();
+    }
+    for o in &state.blocklist_opt_outs {
+        tx.execute(
+            "insert into public.blocklist_opt_outs (user_id, blocklist, effective_at)
+             values ($1::text::uuid, $2, $3::text::timestamptz)",
+            &[&user_id, &o.blocklist, &o.effective_at.to_rfc3339()],
         )
         .unwrap();
     }

@@ -7,7 +7,7 @@ mod common;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use cloister_core::Command;
+use cloister_core::{Command, EntryKind};
 use cloister_sync::{
     Backend, CommandOutcome, Device, DeviceInfo, DeviceStatus, Platform, SyncOptions, SyncStatus,
 };
@@ -179,4 +179,39 @@ fn the_devices_list_shows_each_device_and_its_status() {
             ("Desktop B", DeviceStatus::Offline, true),
         ]
     );
+}
+
+#[test]
+#[ignore = "needs a local Supabase; run backend/scripts/test.sh"]
+fn a_blocklist_addition_on_one_device_applies_on_another_at_once_but_a_removal_waits() {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = two_devices(dir.path(), "blocklists");
+    let sync = b.start_sync(realtime_only());
+    wait_until("B online", || b.sync_status() == SyncStatus::Online);
+    assert_eq!(
+        a.send(&start_block(30, &["work"])).unwrap(),
+        CommandOutcome::Accepted
+    );
+    wait_until("B enforces the Block", || blocks(&b, "github.com"));
+
+    let add = Command::AddBlocklistEntry {
+        blocklist: "work".into(),
+        kind: EntryKind::Domain,
+        entry: "figma.com".into(),
+    };
+    assert_eq!(a.send(&add).unwrap(), CommandOutcome::Accepted);
+    wait_until("B blocks the added domain", || blocks(&b, "figma.com"));
+
+    let remove = Command::RemoveBlocklistEntry {
+        blocklist: "work".into(),
+        kind: EntryKind::Domain,
+        entry: "github.com".into(),
+    };
+    assert_eq!(a.send(&remove).unwrap(), CommandOutcome::Accepted);
+    wait_until("B knows the pending removal", || {
+        !b.state().unwrap().blocklist_removals.is_empty()
+    });
+    assert!(blocks(&b, "github.com"), "removals take effect tomorrow");
+    assert!(blocks(&a, "github.com"));
+    sync.stop();
 }
