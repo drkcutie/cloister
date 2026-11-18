@@ -63,11 +63,20 @@ fn run(path: &Path) -> Result<(), String> {
                 let decision = decide(&state, command, step.server_time);
                 let (outcome, reason) = match &decision.outcome {
                     Outcome::Accepted => ("accepted".to_string(), None),
-                    Outcome::Rejected { reason } => ("rejected".to_string(), Some(reason.code().to_string())),
+                    Outcome::Rejected { reason } => {
+                        ("rejected".to_string(), Some(reason.code().to_string()))
+                    }
                 };
-                let want = step.expect.outcome.as_deref().ok_or_else(|| at("a step with a command must expect an outcome".into()))?;
+                let want = step
+                    .expect
+                    .outcome
+                    .as_deref()
+                    .ok_or_else(|| at("a step with a command must expect an outcome".into()))?;
                 if outcome != want || reason != step.expect.reason {
-                    return Err(at(format!("expected {want} {:?}, got {outcome} {reason:?}", step.expect.reason)));
+                    return Err(at(format!(
+                        "expected {want} {:?}, got {outcome} {reason:?}",
+                        step.expect.reason
+                    )));
                 }
                 if outcome == "rejected" && decision.state != state {
                     return Err(at("a rejected command changed the state".into()));
@@ -113,7 +122,10 @@ fn check_enforcement(got: &Enforcement, want: &ExpectEnforcement) -> Result<(), 
         let mut apps = apps.clone();
         apps.sort();
         if apps != got.blocked_apps {
-            return Err(format!("blocked_apps: want {apps:?}, got {:?}", got.blocked_apps));
+            return Err(format!(
+                "blocked_apps: want {apps:?}, got {:?}",
+                got.blocked_apps
+            ));
         }
     }
     if let Some(ritual) = &want.ritual {
@@ -135,5 +147,10 @@ fn every_shared_fixture_passes() {
     paths.sort();
     assert!(!paths.is_empty(), "no fixtures found");
     let failures: Vec<String> = paths.iter().filter_map(|p| run(p).err()).collect();
-    assert!(failures.is_empty(), "{} fixture(s) failed:\n{}", failures.len(), failures.join("\n\n"));
+    assert!(
+        failures.is_empty(),
+        "{} fixture(s) failed:\n{}",
+        failures.len(),
+        failures.join("\n\n")
+    );
 }
