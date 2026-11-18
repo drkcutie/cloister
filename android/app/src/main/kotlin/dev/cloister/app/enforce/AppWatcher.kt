@@ -57,9 +57,12 @@ class AppWatcher : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
-        // Our own overlay window reports as this package; it isn't a new foreground app.
-        if (pkg == packageName && overlay != null) return
-        if (pkg == "com.android.systemui") return
+        // Our own overlay window reports as this package; it isn't a new foreground app. Our
+        // Activity coming to the front is (it reports its class).
+        val ownActivity = pkg == packageName && event.className?.toString()?.endsWith("Activity") == true
+        if (pkg == packageName && overlay != null && !ownActivity) return
+        if (pkg == "com.android.systemui" || pkg == inputMethod()) return
+        Log.d(TAG, "foreground: $pkg ${event.className}")
         foreground = pkg
         guard(pkg, event.className?.toString().orEmpty())
         evaluate(last)
@@ -102,6 +105,12 @@ class AppWatcher : AccessibilityService() {
             .getOrDefault(false)
 
     private fun evaluate(now: EnforcementNow) {
+        // A service restarted (or suspended by UI Automation) starts with no window event yet:
+        // take the app in front from the active window.
+        if (foreground == null) {
+            foreground = runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()
+                ?.takeIf { it != "com.android.systemui" }
+        }
         val fg = foreground
         val ownAppAllowed = fg == packageName && SystemClock.elapsedRealtime() < allowOwnAppUntil
         when {
@@ -160,6 +169,9 @@ class AppWatcher : AccessibilityService() {
                     Kind.Ritual -> RitualOverlay(
                         current.lockdown, current.nextWorkdayStart,
                         onOpenRitual = {
+                            // Cloister is in front from now on, before its window event arrives,
+                            // so the next tick doesn't cover it again.
+                            this@AppWatcher.foreground = packageName
                             hideOverlay()
                             startActivity(
                                 Intent(this@AppWatcher, MainActivity::class.java)
@@ -193,6 +205,11 @@ class AppWatcher : AccessibilityService() {
             startActivity(Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
+
+    /** The keyboard's package: its window isn't an app in front. */
+    private fun inputMethod(): String? =
+        android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.DEFAULT_INPUT_METHOD)
+            ?.substringBefore('/')
 
     private fun hideOverlay() {
         val view = overlay ?: return
