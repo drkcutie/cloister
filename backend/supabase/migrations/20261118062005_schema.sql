@@ -168,7 +168,7 @@ create table public.blocks (
   deep boolean not null default true,
   -- Whether the write that set this length confirmed a Block longer than 4 hours.
   confirmed_long boolean not null default false,
-  intent text check (length(intent) <= 200),
+  intent text,
   depth_rating smallint check (depth_rating between 1 and 5),
   created_at timestamptz not null default now(),
   primary key (user_id, id),

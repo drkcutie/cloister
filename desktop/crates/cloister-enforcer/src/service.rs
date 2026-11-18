@@ -138,17 +138,20 @@ impl<P: Platform, C: Clock> Service<P, C> {
     }
 }
 
-/// Only commands that can make enforcement stricter are accepted locally. Anything that
-/// could loosen it goes through the backend, which applies it tomorrow (ADR 0001).
+/// Only commands that can't loosen enforcement are accepted locally: those that make it
+/// stricter, and records such as a Depth Rating that don't touch it. Anything that could
+/// loosen it goes through the backend, which applies it tomorrow (ADR 0001).
 fn tightens(command: &Command) -> bool {
     match command {
-        Command::StartBlock { .. } | Command::ExtendBlock { .. } => true,
+        Command::StartBlock { .. }
+        | Command::ExtendBlock { .. }
+        | Command::RecordDepthRating { .. } => true,
         Command::CancelBlock { .. } => false,
     }
 }
 
 /// `state` with `incoming` folded in: new Blocks are added and a later end is taken; nothing
-/// is shortened or removed. `None` if an incoming Block is impossible (empty or over 24 hours).
+/// is shortened or removed. A known Intent or Depth Rating is kept. `None` if an incoming Block is impossible (empty or over 24 hours).
 pub fn merge_blocks(state: &State, incoming: &[Block]) -> Option<State> {
     let mut next = state.clone();
     for block in incoming {
@@ -157,7 +160,15 @@ pub fn merge_blocks(state: &State, incoming: &[Block]) -> Option<State> {
             return None;
         }
         match next.blocks.iter_mut().find(|b| b.id == block.id) {
-            Some(known) => known.ends_at = known.ends_at.max(block.ends_at),
+            Some(known) => {
+                known.ends_at = known.ends_at.max(block.ends_at);
+                if known.intent.is_none() {
+                    known.intent.clone_from(&block.intent);
+                }
+                if known.depth_rating.is_none() {
+                    known.depth_rating = block.depth_rating;
+                }
+            }
             None => next.blocks.push(block.clone()),
         }
     }

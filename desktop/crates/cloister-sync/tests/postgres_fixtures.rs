@@ -64,11 +64,17 @@ fn repo_root() -> PathBuf {
 fn connect() -> Client {
     let url = std::env::var("CLOISTER_DB_URL").unwrap_or_else(|_| DEFAULT_DB_URL.into());
     Client::connect(&url, NoTls).unwrap_or_else(|e| {
-        panic!("can't reach the local Supabase database at {url} ({e}); run backend/scripts/test.sh")
+        panic!(
+            "can't reach the local Supabase database at {url} ({e}); run backend/scripts/test.sh"
+        )
     })
 }
 
-fn query_json(tx: &mut Transaction, sql: &str, params: &[&(dyn postgres::types::ToSql + Sync)]) -> Value {
+fn query_json(
+    tx: &mut Transaction,
+    sql: &str,
+    params: &[&(dyn postgres::types::ToSql + Sync)],
+) -> Value {
     tx.query_one(sql, params).unwrap().get::<_, Value>(0)
 }
 
@@ -82,12 +88,15 @@ fn sign_in_with_state(tx: &mut Transaction, scenario: &str, initial_state: &Valu
         .unwrap()
         .get(0);
     // History is written as-is: a scenario's initial state is a given, not a command.
-    tx.batch_execute("set local session_replication_role = replica").unwrap();
+    tx.batch_execute("set local session_replication_role = replica")
+        .unwrap();
     let state: State = serde_json::from_value(initial_state.clone()).expect("initial_state");
     for block in &state.blocks {
         tx.execute(
-            "insert into public.blocks (user_id, id, starts_at, ends_at, blocklists, deep)
-             values ($1::text::uuid, $2, $3::text::timestamptz, $4::text::timestamptz, $5, $6)",
+            "insert into public.blocks
+               (user_id, id, starts_at, ends_at, blocklists, deep, intent, depth_rating)
+             values ($1::text::uuid, $2, $3::text::timestamptz, $4::text::timestamptz, $5, $6, $7,
+                     $8::int::smallint)",
             &[
                 &user_id,
                 &block.id,
@@ -95,14 +104,20 @@ fn sign_in_with_state(tx: &mut Transaction, scenario: &str, initial_state: &Valu
                 &block.ends_at.to_rfc3339(),
                 &block.blocklists,
                 &block.deep,
+                &block.intent,
+                &block.depth_rating.map(i32::from),
             ],
         )
         .unwrap();
     }
-    tx.batch_execute("set local session_replication_role = origin").unwrap();
-    let claims = json!({ "sub": user_id, "role": "authenticated" }).to_string();
-    tx.execute("select set_config('request.jwt.claims', $1, true)", &[&claims])
+    tx.batch_execute("set local session_replication_role = origin")
         .unwrap();
+    let claims = json!({ "sub": user_id, "role": "authenticated" }).to_string();
+    tx.execute(
+        "select set_config('request.jwt.claims', $1, true)",
+        &[&claims],
+    )
+    .unwrap();
     tx.batch_execute("set local role authenticated").unwrap();
 }
 
@@ -113,8 +128,11 @@ fn run(client: &mut Client, path: &Path) -> Result<(), String> {
     sign_in_with_state(&mut tx, &scenario.name, &scenario.initial_state);
     for (i, step) in scenario.steps.iter().enumerate() {
         let at = |msg: String| format!("{} step {i}: {msg}", scenario.name);
-        tx.execute("select set_config('cloister.server_time', $1, true)", &[&step.server_time])
-            .unwrap();
+        tx.execute(
+            "select set_config('cloister.server_time', $1, true)",
+            &[&step.server_time],
+        )
+        .unwrap();
         if let Some(command) = &step.command {
             // Same parse as the Rust engine, so a typo in a fixture fails here too.
             serde_json::from_value::<Command>(command.clone())
@@ -134,7 +152,8 @@ fn run(client: &mut Client, path: &Path) -> Result<(), String> {
                     step.expect.reason
                 )));
             }
-            if outcome == "rejected" && query_json(&mut tx, "select public.state()", &[]) != before {
+            if outcome == "rejected" && query_json(&mut tx, "select public.state()", &[]) != before
+            {
                 return Err(at("a rejected command changed the state".into()));
             }
         }
@@ -154,7 +173,11 @@ fn run(client: &mut Client, path: &Path) -> Result<(), String> {
 
 fn strings(v: &Value) -> Vec<String> {
     v.as_array()
-        .map(|a| a.iter().filter_map(|s| s.as_str().map(str::to_string)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|s| s.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -204,7 +227,10 @@ fn every_shared_fixture_passes_against_postgres() {
     paths.sort();
     assert!(!paths.is_empty(), "no fixtures found");
     let mut client = connect();
-    let failures: Vec<String> = paths.iter().filter_map(|p| run(&mut client, p).err()).collect();
+    let failures: Vec<String> = paths
+        .iter()
+        .filter_map(|p| run(&mut client, p).err())
+        .collect();
     assert!(
         failures.is_empty(),
         "{} fixture(s) failed against Postgres:\n{}",

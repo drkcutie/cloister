@@ -13,8 +13,16 @@ fn block(id: &str, starts: &str, ends: &str) -> Block {
         id: id.into(),
         starts_at: t(starts),
         ends_at: t(ends),
-        blocklists: vec!["forums".into(), "news".into(), "shopping".into(), "social".into(), "video".into()],
+        blocklists: vec![
+            "forums".into(),
+            "news".into(),
+            "shopping".into(),
+            "social".into(),
+            "video".into(),
+        ],
         deep: true,
+        intent: None,
+        depth_rating: None,
     }
 }
 
@@ -51,17 +59,27 @@ fn merging_never_shortens_or_forgets_a_block() {
         .unwrap();
     assert!(!changed);
     let state = mirror.state().unwrap();
-    let ids: Vec<_> = state.blocks.iter().map(|b| (b.id.as_str(), b.ends_at)).collect();
+    let ids: Vec<_> = state
+        .blocks
+        .iter()
+        .map(|b| (b.id.as_str(), b.ends_at))
+        .collect();
     assert_eq!(
         ids,
-        vec![("b1", t("2026-01-05T11:00:00Z")), ("b2", t("2026-01-05T09:35:00Z"))]
+        vec![
+            ("b1", t("2026-01-05T11:00:00Z")),
+            ("b2", t("2026-01-05T09:35:00Z"))
+        ]
     );
     // Extensions do arrive.
     let changed = mirror
         .merge_blocks(&[block("b1", "2026-01-05T09:00:00Z", "2026-01-05T12:00:00Z")])
         .unwrap();
     assert!(changed);
-    assert_eq!(mirror.state().unwrap().blocks[0].ends_at, t("2026-01-05T12:00:00Z"));
+    assert_eq!(
+        mirror.state().unwrap().blocks[0].ends_at,
+        t("2026-01-05T12:00:00Z")
+    );
 }
 
 #[test]

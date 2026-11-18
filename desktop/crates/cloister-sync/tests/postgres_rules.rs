@@ -23,13 +23,18 @@ fn new_user(tx: &mut Transaction, email: &str) -> String {
 fn act_as(tx: &mut Transaction, user_id: &str) {
     tx.batch_execute("reset role").unwrap();
     let claims = json!({ "sub": user_id, "role": "authenticated" }).to_string();
-    tx.execute("select set_config('request.jwt.claims', $1, true)", &[&claims])
-        .unwrap();
+    tx.execute(
+        "select set_config('request.jwt.claims', $1, true)",
+        &[&claims],
+    )
+    .unwrap();
     tx.batch_execute("set local role authenticated").unwrap();
 }
 
 fn command(tx: &mut Transaction, cmd: Value) -> Value {
-    tx.query_one("select public.command($1)", &[&cmd]).unwrap().get(0)
+    tx.query_one("select public.command($1)", &[&cmd])
+        .unwrap()
+        .get(0)
 }
 
 /// Run `sql` in a savepoint; returns the SQLSTATE and message if it failed.
@@ -55,7 +60,10 @@ fn each_user_sees_only_their_own_blocks_and_devices() {
     let a = new_user(&mut tx, "a@rules.test");
     let b = new_user(&mut tx, "b@rules.test");
     act_as(&mut tx, &a);
-    let started = command(&mut tx, json!({"type": "start_block", "block_id": "a1", "minutes": 30}));
+    let started = command(
+        &mut tx,
+        json!({"type": "start_block", "block_id": "a1", "minutes": 30}),
+    );
     assert_eq!(started["outcome"], "accepted");
     tx.batch_execute(
         "insert into public.devices (id, name, platform) values (gen_random_uuid(), 'Laptop', 'macos')",
@@ -63,8 +71,14 @@ fn each_user_sees_only_their_own_blocks_and_devices() {
     .unwrap();
 
     act_as(&mut tx, &b);
-    let blocks: i64 = tx.query_one("select count(*) from public.blocks", &[]).unwrap().get(0);
-    let devices: i64 = tx.query_one("select count(*) from public.devices", &[]).unwrap().get(0);
+    let blocks: i64 = tx
+        .query_one("select count(*) from public.blocks", &[])
+        .unwrap()
+        .get(0);
+    let devices: i64 = tx
+        .query_one("select count(*) from public.devices", &[])
+        .unwrap()
+        .get(0);
     assert_eq!((blocks, devices), (0, 0));
     let state: Value = tx.query_one("select public.state()", &[]).unwrap().get(0);
     assert_eq!(state, json!({"blocks": []}));
@@ -84,7 +98,10 @@ fn a_tampered_client_cant_write_blocks_directly() {
     let mut tx = client.transaction().unwrap();
     let a = new_user(&mut tx, "tamper@rules.test");
     act_as(&mut tx, &a);
-    command(&mut tx, json!({"type": "start_block", "block_id": "b1", "minutes": 60}));
+    command(
+        &mut tx,
+        json!({"type": "start_block", "block_id": "b1", "minutes": 60}),
+    );
     for sql in [
         "update public.blocks set ends_at = now() where id = 'b1'",
         "delete from public.blocks where id = 'b1'",
@@ -103,17 +120,32 @@ fn the_triggers_hold_even_for_privileged_writes() {
     let mut tx = client.transaction().unwrap();
     let a = new_user(&mut tx, "owner@rules.test");
     act_as(&mut tx, &a);
-    command(&mut tx, json!({"type": "start_block", "block_id": "b1", "minutes": 60}));
+    command(
+        &mut tx,
+        json!({"type": "start_block", "block_id": "b1", "minutes": 60}),
+    );
     tx.batch_execute("reset role").unwrap();
     let shorten = try_sql(
         &mut tx,
         "update public.blocks set ends_at = ends_at - interval '1 minute' where id = 'b1'",
     );
-    assert_eq!(shorten, Some(("CL001".into(), "block_cannot_be_shortened".into())));
+    assert_eq!(
+        shorten,
+        Some(("CL001".into(), "block_cannot_be_shortened".into()))
+    );
     let cancel = try_sql(&mut tx, "delete from public.blocks where id = 'b1'");
-    assert_eq!(cancel, Some(("CL001".into(), "block_cannot_be_cancelled".into())));
-    let loosen = try_sql(&mut tx, "update public.blocks set blocklists = '{}' where id = 'b1'");
-    assert_eq!(loosen, Some(("CL001".into(), "block_cannot_be_changed".into())));
+    assert_eq!(
+        cancel,
+        Some(("CL001".into(), "block_cannot_be_cancelled".into()))
+    );
+    let loosen = try_sql(
+        &mut tx,
+        "update public.blocks set blocklists = '{}' where id = 'b1'",
+    );
+    assert_eq!(
+        loosen,
+        Some(("CL001".into(), "block_cannot_be_changed".into()))
+    );
     // Deleting the account is the one way its Blocks go.
     let gone = try_sql(&mut tx, &format!("delete from auth.users where id = '{a}'"));
     assert_eq!(gone, None);

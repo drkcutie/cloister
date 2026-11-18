@@ -10,9 +10,18 @@ fn t(s: &str) -> DateTime<Utc> {
 #[test]
 fn a_device_is_enforcing_only_while_it_reports_so_recently() {
     let now = t("2026-01-05T09:00:00Z");
-    assert_eq!(DeviceStatus::classify(true, t("2026-01-05T08:59:30Z"), now), DeviceStatus::Enforcing);
-    assert_eq!(DeviceStatus::classify(true, t("2026-01-05T08:55:00Z"), now), DeviceStatus::Offline);
-    assert_eq!(DeviceStatus::classify(false, t("2026-01-05T08:59:59Z"), now), DeviceStatus::Offline);
+    assert_eq!(
+        DeviceStatus::classify(true, t("2026-01-05T08:59:30Z"), now),
+        DeviceStatus::Enforcing
+    );
+    assert_eq!(
+        DeviceStatus::classify(true, t("2026-01-05T08:55:00Z"), now),
+        DeviceStatus::Offline
+    );
+    assert_eq!(
+        DeviceStatus::classify(false, t("2026-01-05T08:59:59Z"), now),
+        DeviceStatus::Offline
+    );
     assert_eq!(DeviceStatus::Enforcing.label(), "Enforcing");
     assert_eq!(DeviceStatus::Offline.label(), "Offline");
 }

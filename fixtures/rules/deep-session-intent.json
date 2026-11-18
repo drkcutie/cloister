@@ -1,0 +1,52 @@
+{
+  "name": "deep-session-intent",
+  "description": "A Deep Session keeps its Intent, trimmed; a Block started without one has none.",
+  "initial_state": { "blocks": [] },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 90, "intent": "  Draft chapter 3 of the thesis  " },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:30:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true,
+              "intent": "Draft chapter 3 of the thesis"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T11:00:00Z",
+      "command": { "type": "start_block", "block_id": "b2", "minutes": 30, "deep": false },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:30:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true,
+              "intent": "Draft chapter 3 of the thesis"
+            },
+            {
+              "id": "b2",
+              "starts_at": "2026-01-05T11:00:00Z",
+              "ends_at": "2026-01-05T11:30:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": false
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

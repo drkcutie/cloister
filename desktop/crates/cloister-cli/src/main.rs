@@ -89,6 +89,7 @@ fn run(args: &[String]) -> Result<(), String> {
                 blocklists: f.blocklists,
                 confirm_long: f.confirm_long,
                 client_time: Some(Utc::now()),
+                intent: None,
             },
         },
         ["block", "extend"] => Request::Command {
@@ -152,6 +153,10 @@ fn explain(code: &str) -> String {
         "unknown_block" => "No Block has that id.",
         "unknown_blocklist" => "No Blocklist has that id.",
         "duplicate_block" => "A Block with that id already exists.",
+        "not_a_deep_session" => "Only a Deep Session has a Depth Rating.",
+        "deep_session_not_ended" => "The Deep Session hasn't ended yet. Rate it then.",
+        "invalid_depth_rating" => "A Depth Rating is 1 to 5.",
+        "depth_rating_already_recorded" => "This Depth Rating is already recorded.",
         _ => "",
     };
     if text.is_empty() {

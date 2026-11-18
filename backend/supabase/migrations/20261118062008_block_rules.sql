@@ -34,8 +34,28 @@ language sql stable
 set search_path = ''
 as $$ select array(select id from public.blocklists where kind = 'distraction' order by id) $$;
 
+-- Recording a Depth Rating: Deep Sessions only, once, from their end, 1 to 5 (engine order).
+create function cloister.check_depth_rating(deep boolean, ends_at timestamptz, recorded smallint,
+                                            rating int) returns void
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if not deep then
+    perform cloister.reject('not_a_deep_session');
+  elsif cloister.server_now() < ends_at then
+    perform cloister.reject('deep_session_not_ended');
+  elsif rating is null or rating not between 1 and 5 then
+    perform cloister.reject('invalid_depth_rating');
+  elsif recorded is not null then
+    perform cloister.reject('depth_rating_already_recorded');
+  end if;
+end
+$$;
+
 -- Starting a Block: it starts at server time whatever the client sent (only the length the
--- client asked for counts), always covers the Distraction List, and can't reuse an id.
+-- client asked for counts), always covers the Distraction List, and can't reuse an id. The
+-- Intent is trimmed; a blank one is none.
 create function cloister.block_inserting() returns trigger
 language plpgsql
 set search_path = ''
@@ -55,6 +75,7 @@ begin
   new.starts_at := now;
   new.ends_at := now + length;
   new.blocklists := array(select distinct x from unnest(new.blocklists || cloister.distraction_ids()) as t(x) order by 1);
+  new.intent := nullif(regexp_replace(new.intent, '^\s+|\s+$', '', 'g'), '');
   new.depth_rating := null;
   new.created_at := now;
   return new;
@@ -64,7 +85,7 @@ create trigger block_inserting before insert on public.blocks
   for each row execute function cloister.block_inserting();
 
 -- Changing a Block: its end only moves later, within the cap, and only while it runs. Nothing
--- else about it changes, except a Deep Session's Intent and, once it has ended, its Depth Rating.
+-- else about it changes, except that a Deep Session gets its Depth Rating once it has ended.
 create function cloister.block_updating() returns trigger
 language plpgsql
 set search_path = ''
@@ -74,7 +95,7 @@ declare
 begin
   if new.user_id <> old.user_id or new.id <> old.id or new.starts_at <> old.starts_at
      or new.blocklists <> old.blocklists or new.deep <> old.deep
-     or new.created_at <> old.created_at then
+     or new.created_at <> old.created_at or new.intent is distinct from old.intent then
     perform cloister.reject('block_cannot_be_changed');
   end if;
   if new.ends_at <> old.ends_at then
@@ -86,9 +107,8 @@ begin
     end if;
     perform cloister.check_length(new.ends_at - new.starts_at, new.confirmed_long);
   end if;
-  if new.depth_rating is distinct from old.depth_rating
-     and (not old.deep or now < old.ends_at or old.depth_rating is not null) then
-    perform cloister.reject('depth_rating_not_due');
+  if new.depth_rating is distinct from old.depth_rating then
+    perform cloister.check_depth_rating(old.deep, old.ends_at, old.depth_rating, new.depth_rating);
   end if;
   return new;
 end
@@ -122,7 +142,11 @@ as $$
     'starts_at', cloister.rfc3339(starts_at),
     'ends_at', cloister.rfc3339(ends_at),
     'blocklists', to_jsonb(blocklists),
-    'deep', deep) order by starts_at, id), '[]'::jsonb))
+    'deep', deep)
+    || case when intent is null then '{}'::jsonb else jsonb_build_object('intent', intent) end
+    || case when depth_rating is null then '{}'::jsonb
+            else jsonb_build_object('depth_rating', depth_rating) end
+    order by starts_at, id), '[]'::jsonb))
   from public.blocks
   where user_id = (select auth.uid())
 $$;
@@ -190,17 +214,21 @@ begin
     case kind
     when 'start_block' then
       perform cloister.check_keys(cmd, array['block_id', 'minutes'],
-                                  array['deep', 'blocklists', 'confirm_long', 'client_time']);
+                                  array['deep', 'blocklists', 'confirm_long', 'client_time', 'intent']);
       if jsonb_typeof(cmd->'minutes') <> 'number' then
         perform cloister.reject('invalid_command');
       end if;
       -- Clamp before building an interval; the triggers still see the true category.
       minutes := least(greatest((cmd->>'minutes')::numeric, -1), 24 * 60 + 1);
-      insert into public.blocks (user_id, id, starts_at, ends_at, blocklists, deep, confirmed_long)
+      if jsonb_typeof(coalesce(cmd->'intent', '""')) not in ('string', 'null') then
+        perform cloister.reject('invalid_command');
+      end if;
+      insert into public.blocks (user_id, id, starts_at, ends_at, blocklists, deep, confirmed_long, intent)
       values (uid, cmd->>'block_id', now, now + make_interval(mins => minutes::int),
               array(select jsonb_array_elements_text(coalesce(cmd->'blocklists', '[]'))),
               coalesce((cmd->>'deep')::boolean, true),
-              coalesce((cmd->>'confirm_long')::boolean, false));
+              coalesce((cmd->>'confirm_long')::boolean, false),
+              cmd->>'intent');
     when 'extend_block' then
       perform cloister.check_keys(cmd, array['block_id', 'ends_at'], array['confirm_long']);
       select * into block from public.blocks b
@@ -217,6 +245,21 @@ begin
             confirmed_long = coalesce((cmd->>'confirm_long')::boolean, false)
         where b.user_id = uid and b.id = block.id;
       end if;
+    when 'record_depth_rating' then
+      perform cloister.check_keys(cmd, array['block_id', 'rating'], array[]::text[]);
+      if jsonb_typeof(cmd->'rating') <> 'number' then
+        perform cloister.reject('invalid_command');
+      end if;
+      select * into block from public.blocks b
+        where b.user_id = uid and b.id = cmd->>'block_id' for update;
+      if not found then
+        perform cloister.reject('unknown_block');
+      end if;
+      -- Clamped so any out-of-range number reads as out of range, not as an overflow.
+      perform cloister.check_depth_rating(block.deep, block.ends_at, block.depth_rating,
+        least(greatest((cmd->>'rating')::numeric, 0), 6)::int);
+      update public.blocks b set depth_rating = (cmd->>'rating')::smallint
+      where b.user_id = uid and b.id = block.id;
     when 'cancel_block' then
       perform cloister.check_keys(cmd, array['block_id'], array[]::text[]);
       delete from public.blocks b where b.user_id = uid and b.id = cmd->>'block_id';

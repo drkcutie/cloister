@@ -121,7 +121,8 @@ impl Backend {
     /// The page to open in the browser for Google sign-in. It redirects to `redirect_to` with
     /// a `code` for [`Backend::exchange_code`].
     pub fn google_sign_in_url(&self, redirect_to: &str, pkce: &Pkce) -> String {
-        let mut url = url::Url::parse(&format!("{}/auth/v1/authorize", self.url)).expect("valid URL");
+        let mut url =
+            url::Url::parse(&format!("{}/auth/v1/authorize", self.url)).expect("valid URL");
         url.query_pairs_mut()
             .append_pair("provider", "google")
             .append_pair("redirect_to", redirect_to)
@@ -170,7 +171,11 @@ impl Backend {
         let expires_at = v["expires_at"]
             .as_i64()
             .and_then(|s| Utc.timestamp_opt(s, 0).single())
-            .or_else(|| v["expires_in"].as_i64().map(|s| Utc::now() + chrono::Duration::seconds(s)))
+            .or_else(|| {
+                v["expires_in"]
+                    .as_i64()
+                    .map(|s| Utc::now() + chrono::Duration::seconds(s))
+            })
             .ok_or_else(|| Error::Protocol("no expiry in session".into()))?;
         Ok(Session {
             access_token: text("access_token")?,
@@ -187,7 +192,9 @@ impl Backend {
     // REST -----------------------------------------------------------------------------------
 
     pub(crate) fn rest_get(&self, session: &Session, path_and_query: &str) -> Result<Value> {
-        let req = self.agent.get(&format!("{}/rest/v1/{path_and_query}", self.url));
+        let req = self
+            .agent
+            .get(&format!("{}/rest/v1/{path_and_query}", self.url));
         self.call(req, None, Some(session))
     }
 
@@ -205,7 +212,12 @@ impl Backend {
         self.call(req, Some(body), Some(session))
     }
 
-    fn call(&self, req: ureq::Request, body: Option<Value>, session: Option<&Session>) -> Result<Value> {
+    fn call(
+        &self,
+        req: ureq::Request,
+        body: Option<Value>,
+        session: Option<&Session>,
+    ) -> Result<Value> {
         let mut req = req.set("apikey", &self.anon_key);
         if let Some(s) = session {
             req = req.set("Authorization", &format!("Bearer {}", s.access_token));
@@ -216,7 +228,9 @@ impl Backend {
         };
         match answer {
             Ok(resp) => {
-                let text = resp.into_string().map_err(|e| Error::Offline(e.to_string()))?;
+                let text = resp
+                    .into_string()
+                    .map_err(|e| Error::Offline(e.to_string()))?;
                 if text.trim().is_empty() {
                     Ok(Value::Null)
                 } else {

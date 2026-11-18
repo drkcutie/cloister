@@ -45,22 +45,24 @@ impl Channel {
             last_heartbeat: Instant::now(),
         };
         channel.set_read_timeout(Duration::from_millis(500))?;
-        let join_ref = channel.send(
-            &channel.topic.clone(),
-            "phx_join",
-            json!({
-                "config": {
-                    "broadcast": { "ack": false, "self": false },
-                    "presence": { "enabled": false },
-                    "postgres_changes": [{
-                        "event": "*", "schema": "public", "table": "blocks",
-                        "filter": format!("user_id=eq.{}", session.user_id),
-                    }],
-                    "private": false,
-                },
-                "access_token": session.access_token,
-            }),
-        )?;
+        let join_ref = channel
+            .send(
+                &channel.topic.clone(),
+                "phx_join",
+                json!({
+                    "config": {
+                        "broadcast": { "ack": false, "self": false },
+                        "presence": { "enabled": false },
+                        "postgres_changes": [{
+                            "event": "*", "schema": "public", "table": "blocks",
+                            "filter": format!("user_id=eq.{}", session.user_id),
+                        }],
+                        "private": false,
+                    },
+                    "access_token": session.access_token,
+                }),
+            )?
+            .to_string();
         // The join reply comes first; changes are only streamed once Realtime says it has
         // subscribed to Postgres. Anything earlier must be read over REST by the caller.
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -68,7 +70,7 @@ impl Channel {
         while Instant::now() < deadline {
             let Some(msg) = channel.read()? else { continue };
             let status = &msg["payload"]["status"];
-            if msg["event"] == "phx_reply" && msg["ref"] == join_ref.to_string() {
+            if msg["event"] == "phx_reply" && msg["ref"].as_str() == Some(join_ref.as_str()) {
                 if status != "ok" {
                     return Err(Error::Protocol(format!("join refused: {}", msg["payload"])));
                 }
@@ -80,7 +82,10 @@ impl Channel {
                 return if status == "ok" {
                     Ok(channel)
                 } else {
-                    Err(Error::Protocol(format!("subscription failed: {}", msg["payload"])))
+                    Err(Error::Protocol(format!(
+                        "subscription failed: {}",
+                        msg["payload"]
+                    )))
                 };
             }
         }
@@ -108,8 +113,12 @@ impl Channel {
     /// Hand the channel a refreshed access token.
     pub(crate) fn update_token(&mut self, session: &Session) -> Result<()> {
         let topic = self.topic.clone();
-        self.send(&topic, "access_token", json!({ "access_token": session.access_token }))
-            .map(|_| ())
+        self.send(
+            &topic,
+            "access_token",
+            json!({ "access_token": session.access_token }),
+        )
+        .map(|_| ())
     }
 
     fn send(&mut self, topic: &str, event: &str, payload: Value) -> Result<u64> {

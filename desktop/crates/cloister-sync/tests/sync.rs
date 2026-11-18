@@ -44,6 +44,7 @@ fn start_block(minutes: i64, blocklists: &[&str]) -> Command {
         blocklists: blocklists.iter().map(|s| s.to_string()).collect(),
         confirm_long: false,
         client_time: None,
+        intent: None,
     }
 }
 
@@ -84,9 +85,17 @@ fn a_block_started_on_one_device_is_enforced_on_another() {
     wait_until("B online", || b.sync_status() == SyncStatus::Online);
     assert!(!blocks(&b, "youtube.com"));
 
-    assert_eq!(a.send(&start_block(30, &[])).unwrap(), CommandOutcome::Accepted);
-    assert!(blocks(&a, "youtube.com"), "A enforces its own Block at once");
-    wait_until("B enforces the Block started on A", || blocks(&b, "youtube.com"));
+    assert_eq!(
+        a.send(&start_block(30, &[])).unwrap(),
+        CommandOutcome::Accepted
+    );
+    assert!(
+        blocks(&a, "youtube.com"),
+        "A enforces its own Block at once"
+    );
+    wait_until("B enforces the Block started on A", || {
+        blocks(&b, "youtube.com")
+    });
     sync.stop();
 }
 
@@ -96,12 +105,20 @@ fn the_backend_refuses_to_cancel_a_block_from_any_device() {
     let dir = tempfile::tempdir().unwrap();
     let (a, b) = two_devices(dir.path(), "cancel");
     let command = start_block(30, &[]);
-    let Command::StartBlock { block_id, .. } = &command else { unreachable!() };
+    let Command::StartBlock { block_id, .. } = &command else {
+        unreachable!()
+    };
     a.send(&command).unwrap();
-    let outcome = b.send(&Command::CancelBlock { block_id: block_id.clone() }).unwrap();
+    let outcome = b
+        .send(&Command::CancelBlock {
+            block_id: block_id.clone(),
+        })
+        .unwrap();
     assert_eq!(
         outcome,
-        CommandOutcome::Rejected { reason: "block_cannot_be_cancelled".into() }
+        CommandOutcome::Rejected {
+            reason: "block_cannot_be_cancelled".into()
+        }
     );
     assert!(blocks(&b, "youtube.com"));
 }
@@ -128,7 +145,11 @@ fn an_offline_device_keeps_enforcing_and_catches_up_on_reconnect() {
     a.send(&start_block(30, &["work"])).unwrap();
 
     // B comes back and picks it up without user action.
-    let b = device(&common::backend(), &dir.path().join("b.sqlite"), "Desktop B");
+    let b = device(
+        &common::backend(),
+        &dir.path().join("b.sqlite"),
+        "Desktop B",
+    );
     assert!(!blocks(&b, "github.com"));
     let sync = b.start_sync(realtime_only());
     wait_until("B picks up the Block started while it was offline", || {

@@ -7,7 +7,8 @@ use cloister_sync::{Backend, LoopbackRedirect, Pkce, Session};
 use serde_json::Value;
 
 pub fn backend() -> Backend {
-    Backend::from_env().expect("CLOISTER_API_URL and CLOISTER_ANON_KEY (run backend/scripts/test.sh)")
+    Backend::from_env()
+        .expect("CLOISTER_API_URL and CLOISTER_ANON_KEY (run backend/scripts/test.sh)")
 }
 
 pub fn mailpit() -> String {
@@ -58,7 +59,9 @@ pub fn magic_link_for(email: &str) -> String {
 pub fn sign_in(backend: &Backend, email: &str) -> Session {
     let pkce = Pkce::new();
     let redirect = LoopbackRedirect::bind().unwrap();
-    backend.send_magic_link(email, &redirect.url(), &pkce).unwrap();
+    backend
+        .send_magic_link(email, &redirect.url(), &pkce)
+        .unwrap();
     let link = magic_link_for(email);
     let browser = std::thread::spawn(move || {
         // Follows the redirect to the loopback listener, like a browser.

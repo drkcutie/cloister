@@ -6,7 +6,7 @@
 //! cloister-device sign-in --email ADDRESS [--code 123456]   # magic link (or the emailed code)
 //! cloister-device sign-in --google                          # needs Google set up (backend/README.md)
 //! cloister-device run [--enforcer SOCKET]                   # sync until stopped
-//! cloister-device start-block --minutes N [--plain] [--confirm-long] [--blocklist ID]...
+//! cloister-device start-block --minutes N [--plain] [--confirm-long] [--blocklist ID]... [--intent TEXT]
 //! cloister-device status
 //! cloister-device devices
 //! ```
@@ -29,7 +29,7 @@ use cloister_sync::{
 const USAGE: &str = "usage:
   cloister-device sign-in (--email ADDRESS [--code CODE] | --google)
   cloister-device run [--enforcer SOCKET]
-  cloister-device start-block --minutes N [--plain] [--confirm-long] [--blocklist ID]...
+  cloister-device start-block --minutes N [--plain] [--confirm-long] [--blocklist ID]... [--intent TEXT]
   cloister-device status
   cloister-device devices
 options: --mirror PATH  --name NAME
@@ -47,6 +47,7 @@ struct Flags {
     plain: bool,
     confirm_long: bool,
     blocklists: Vec<String>,
+    intent: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -73,11 +74,16 @@ fn parse(args: &[String]) -> Result<Flags, String> {
             "--google" => f.google = true,
             "--enforcer" => f.enforcer = Some(value()?.into()),
             "--minutes" => {
-                f.minutes = Some(value()?.parse().map_err(|_| "--minutes takes a whole number")?)
+                f.minutes = Some(
+                    value()?
+                        .parse()
+                        .map_err(|_| "--minutes takes a whole number")?,
+                )
             }
             "--plain" => f.plain = true,
             "--confirm-long" => f.confirm_long = true,
             "--blocklist" => f.blocklists.push(value()?),
+            "--intent" => f.intent = Some(value()?),
             other => return Err(format!("unknown option {other}\n{USAGE}")),
         }
     }
@@ -139,18 +145,27 @@ fn host_name() -> String {
 
 fn sign_in(backend: &Backend, device: &Device, f: &Flags) -> Result<(), String> {
     let session = if let (Some(email), Some(code)) = (&f.email, &f.code) {
-        backend.verify_email_code(email, code).map_err(|e| e.to_string())?
+        backend
+            .verify_email_code(email, code)
+            .map_err(|e| e.to_string())?
     } else {
         let pkce = Pkce::new();
         let redirect = LoopbackRedirect::bind().map_err(|e| e.to_string())?;
         if f.google {
             let url = backend.google_sign_in_url(&redirect.url(), &pkce);
             println!("Opening the browser for Google sign-in:\n{url}");
-            let _ = std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" })
-                .arg(&url)
-                .status();
+            let _ = std::process::Command::new(if cfg!(target_os = "macos") {
+                "open"
+            } else {
+                "xdg-open"
+            })
+            .arg(&url)
+            .status();
         } else {
-            let email = f.email.as_deref().ok_or("sign-in needs --email or --google")?;
+            let email = f
+                .email
+                .as_deref()
+                .ok_or("sign-in needs --email or --google")?;
             backend
                 .send_magic_link(email, &redirect.url(), &pkce)
                 .map_err(|e| e.to_string())?;
@@ -159,7 +174,9 @@ fn sign_in(backend: &Backend, device: &Device, f: &Flags) -> Result<(), String> 
         let code = redirect
             .wait_for_code(Duration::from_secs(600))
             .map_err(|e| e.to_string())?;
-        backend.exchange_code(&code, &pkce).map_err(|e| e.to_string())?
+        backend
+            .exchange_code(&code, &pkce)
+            .map_err(|e| e.to_string())?
     };
     let email = session.email.clone().unwrap_or_default();
     device.sign_in(session).map_err(|e| e.to_string())?;
@@ -185,7 +202,12 @@ fn sync(device: &Device, enforcer: Option<&std::path::Path>) -> Result<(), Strin
         let state = device.state().map_err(|e| e.to_string())?;
         let mut enforcing = true;
         if let Some(socket) = enforcer {
-            match ipc::send(socket, &Request::Sync { blocks: state.blocks.clone() }) {
+            match ipc::send(
+                socket,
+                &Request::Sync {
+                    blocks: state.blocks.clone(),
+                },
+            ) {
                 Ok(Response::Accepted { .. }) => {}
                 Ok(other) => eprintln!("enforcement service: {other:?}"),
                 Err(e) => {
@@ -195,7 +217,10 @@ fn sync(device: &Device, enforcer: Option<&std::path::Path>) -> Result<(), Strin
             }
         }
         let _ = device.report_enforcing(enforcing);
-        let domains = device.enforcement().map_err(|e| e.to_string())?.blocked_domains;
+        let domains = device
+            .enforcement()
+            .map_err(|e| e.to_string())?
+            .blocked_domains;
         if last_domains.as_ref() != Some(&domains) {
             if domains.is_empty() {
                 println!("Nothing blocked.");
@@ -215,6 +240,7 @@ fn start_block(device: &Device, f: &Flags) -> Result<(), String> {
         blocklists: f.blocklists.clone(),
         confirm_long: f.confirm_long,
         client_time: Some(chrono::Utc::now()),
+        intent: f.intent.clone(),
     };
     match device.send(&command).map_err(|e| e.to_string())? {
         CommandOutcome::Accepted => {
@@ -232,7 +258,13 @@ fn status(device: &Device) -> Result<(), String> {
     };
     println!("{status}");
     let now = device.server_time();
-    for b in device.state().map_err(|e| e.to_string())?.blocks.iter().filter(|b| b.is_active(now)) {
+    for b in device
+        .state()
+        .map_err(|e| e.to_string())?
+        .blocks
+        .iter()
+        .filter(|b| b.is_active(now))
+    {
         println!(
             "{} until {}. Can't be cancelled.",
             if b.deep { "Deep Session" } else { "Block" },

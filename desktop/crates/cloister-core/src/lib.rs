@@ -36,6 +36,12 @@ pub struct Block {
     pub blocklists: Vec<String>,
     /// Whether this Block is a Deep Session.
     pub deep: bool,
+    /// What this Deep Session will produce.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
+    /// How deep the Deep Session was, 1 to 5, recorded once after it ends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth_rating: Option<u8>,
 }
 
 impl Block {
@@ -63,6 +69,9 @@ pub enum Command {
         /// The Device's own clock. Recorded for diagnosis only; never trusted.
         #[serde(default)]
         client_time: Option<DateTime<Utc>>,
+        /// The Deep Session's Intent. Trimmed; blank means none.
+        #[serde(default)]
+        intent: Option<String>,
     },
     /// Move the end of an active Block later. Moving it earlier is rejected.
     ExtendBlock {
@@ -74,6 +83,8 @@ pub enum Command {
     },
     /// Always rejected: a Block can't be cancelled. Exists so the refusal is explicit.
     CancelBlock { block_id: String },
+    /// Record the Depth Rating (1 to 5) of a Deep Session that has ended. Once only.
+    RecordDepthRating { block_id: String, rating: u8 },
 }
 
 fn default_true() -> bool {
@@ -93,6 +104,10 @@ pub enum Reason {
     BlockCannotBeShortened,
     BlockCannotBeCancelled,
     BlockHasEnded,
+    NotADeepSession,
+    DeepSessionNotEnded,
+    InvalidDepthRating,
+    DepthRatingAlreadyRecorded,
 }
 
 impl Reason {
@@ -107,6 +122,10 @@ impl Reason {
             Reason::BlockCannotBeShortened => "block_cannot_be_shortened",
             Reason::BlockCannotBeCancelled => "block_cannot_be_cancelled",
             Reason::BlockHasEnded => "block_has_ended",
+            Reason::NotADeepSession => "not_a_deep_session",
+            Reason::DeepSessionNotEnded => "deep_session_not_ended",
+            Reason::InvalidDepthRating => "invalid_depth_rating",
+            Reason::DepthRatingAlreadyRecorded => "depth_rating_already_recorded",
         }
     }
 }
@@ -195,6 +214,7 @@ fn apply(state: &State, command: &Command, now: DateTime<Utc>) -> Result<State, 
             blocklists,
             confirm_long,
             client_time: _,
+            intent,
         } => {
             check_length(Duration::minutes(*minutes), *confirm_long)?;
             let catalog = Catalog::builtin();
@@ -212,6 +232,12 @@ fn apply(state: &State, command: &Command, now: DateTime<Utc>) -> Result<State, 
                 ends_at: now + Duration::minutes(*minutes),
                 blocklists: ids.into_iter().collect(),
                 deep: *deep,
+                intent: intent
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|i| !i.is_empty())
+                    .map(String::from),
+                depth_rating: None,
             });
         }
         Command::ExtendBlock {
@@ -235,6 +261,22 @@ fn apply(state: &State, command: &Command, now: DateTime<Utc>) -> Result<State, 
         Command::CancelBlock { block_id } => {
             find(&mut next, block_id)?;
             return Err(Reason::BlockCannotBeCancelled);
+        }
+        Command::RecordDepthRating { block_id, rating } => {
+            let block = find(&mut next, block_id)?;
+            if !block.deep {
+                return Err(Reason::NotADeepSession);
+            }
+            if now < block.ends_at {
+                return Err(Reason::DeepSessionNotEnded);
+            }
+            if !(1..=5).contains(rating) {
+                return Err(Reason::InvalidDepthRating);
+            }
+            if block.depth_rating.is_some() {
+                return Err(Reason::DepthRatingAlreadyRecorded);
+            }
+            block.depth_rating = Some(*rating);
         }
     }
     Ok(next)

@@ -7,11 +7,33 @@ The Cargo workspace root is the repository root (`Cargo.toml`); crates live here
 | `crates/cloister-core` | The **rules engine**: one pure interface, `decide(state, command, server_time)` and `enforcement(state, server_time)`. No I/O, no clock. Runs the shared scenarios in `fixtures/rules`. |
 | `crates/cloister-enforcer` | The enforcement service, `cloisterd`: local DNS filter, `pf`, hosts file fallback, IPC socket, state persistence. Only `src/macos.rs` needs root. |
 | `crates/cloister-cli` | `cloister`, a developer CLI that talks to the service over IPC. |
+| `crates/cloister-app-model` | What the desktop app shows and does, with no UI toolkit: the Begin form, the running Deep Session, the Depth Rating prompt, hold-to-commit, calm notices. Tested against a real service over IPC. |
+| `crates/cloister-app` | `cloister-app`, the GPUI desktop app and menu-bar item. A thin skin over `cloister-app-model`. |
 
 ```sh
 cargo test            # rules scenarios + unprivileged service, DNS filter, hosts and pf tests
 cargo clippy --all-targets
 ```
+
+## Desktop app
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer   # Metal shader compiler (full Xcode)
+cargo run -p cloister-enforcer --bin cloisterd -- run --dry-run \
+  --dns 127.0.0.1:5353 --socket /tmp/cloister.sock --state /tmp/cloister-state.json &
+CLOISTER_SOCKET=/tmp/cloister.sock cargo run -p cloister-app
+```
+
+Without `CLOISTER_SOCKET` the app talks to the installed service on `/var/run/cloister.sock`.
+It starts Blocks and records Depth Ratings only through the service's IPC, so closing or
+quitting it changes nothing, and reopening it shows the running Deep Session. GPUI is pulled
+in through `gpui-kit` (pinned exactly; bump deliberately). `cargo test -p cloister-app-model`
+covers the app's behaviour without compiling GPUI.
+
+Assets in `crates/cloister-app/assets`: the logo and app icon exported from the design canvas
+(`logo/*.svg`, plus a 512px PNG of the icon), and the bundled OFL fonts with their licences
+(`fonts/`: EB Garamond from octaviopardo/EBGaramond12, Source Sans 3 and Source Code Pro from
+adobe-fonts, static instances).
 
 ## macOS enforcement
 

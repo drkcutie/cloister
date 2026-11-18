@@ -70,7 +70,11 @@ pub enum DeviceStatus {
 
 impl DeviceStatus {
     /// Enforcing while the Device says so and was seen within [`STALE_AFTER`].
-    pub fn classify(enforcing: bool, last_seen_at: DateTime<Utc>, server_now: DateTime<Utc>) -> Self {
+    pub fn classify(
+        enforcing: bool,
+        last_seen_at: DateTime<Utc>,
+        server_now: DateTime<Utc>,
+    ) -> Self {
         if enforcing && server_now - last_seen_at <= STALE_AFTER {
             DeviceStatus::Enforcing
         } else {
@@ -102,7 +106,9 @@ pub struct DeviceSummary {
 pub enum CommandOutcome {
     Accepted,
     /// `reason` is the stable code (see fixtures/README.md); map it to calm copy.
-    Rejected { reason: String },
+    Rejected {
+        reason: String,
+    },
 }
 
 /// Something the UI may want to redraw for.
@@ -226,7 +232,7 @@ impl Device {
         let backend = &self.inner.backend;
         let rows = self.online(backend.rest_get(
             &session,
-            "blocks?select=id,starts_at,ends_at,blocklists,deep&order=starts_at,id",
+            "blocks?select=id,starts_at,ends_at,blocklists,deep,intent,depth_rating&order=starts_at,id",
         ))?;
         let blocks: Vec<Block> =
             serde_json::from_value(rows).map_err(|e| Error::Protocol(e.to_string()))?;
@@ -290,7 +296,8 @@ impl Device {
             &session,
             "devices?select=id,name,platform,enforcing,last_seen_at&order=created_at,id",
         ))?;
-        let rows: Vec<Row> = serde_json::from_value(rows).map_err(|e| Error::Protocol(e.to_string()))?;
+        let rows: Vec<Row> =
+            serde_json::from_value(rows).map_err(|e| Error::Protocol(e.to_string()))?;
         let now = self.fetch_server_now(&session)?;
         Ok(rows
             .into_iter()
@@ -399,14 +406,21 @@ impl Device {
     }
 
     fn fetch_server_now(&self, session: &Session) -> Result<DateTime<Utc>> {
-        let v = self.online(self.inner.backend.rest_post(session, "rpc/server_now", json!({}), None))?;
+        let v = self.online(self.inner.backend.rest_post(
+            session,
+            "rpc/server_now",
+            json!({}),
+            None,
+        ))?;
         serde_json::from_value(v).map_err(|e| Error::Protocol(e.to_string()))
     }
 
     /// The current session, refreshed first when it is about to expire.
     fn session(&self) -> Result<Session> {
         let mut guard = lock(&self.inner.session);
-        let session = guard.clone().ok_or_else(|| Error::Auth("not signed in".into()))?;
+        let session = guard
+            .clone()
+            .ok_or_else(|| Error::Auth("not signed in".into()))?;
         if !session.expires_soon(Utc::now()) {
             return Ok(session);
         }

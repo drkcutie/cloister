@@ -53,16 +53,26 @@ impl LoopbackRedirect {
             }
             // Drain the headers so the browser sees a clean response.
             let mut header = String::new();
-            while reader.read_line(&mut header).map(|n| n > 2).unwrap_or(false) {
+            while reader
+                .read_line(&mut header)
+                .map(|n| n > 2)
+                .unwrap_or(false)
+            {
                 header.clear();
             }
             let target = line.split_whitespace().nth(1).unwrap_or("/");
             let url = url::Url::parse(&format!("http://127.0.0.1{target}"))
                 .map_err(|e| Error::Auth(e.to_string()))?;
-            let param = |k: &str| url.query_pairs().find(|(key, _)| key == k).map(|(_, v)| v.into_owned());
+            let param = |k: &str| {
+                url.query_pairs()
+                    .find(|(key, _)| key == k)
+                    .map(|(_, v)| v.into_owned())
+            };
             let mut stream = &stream;
             if url.path() != PATH {
-                let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                let _ = stream.write_all(
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
                 continue;
             }
             let _ = write!(

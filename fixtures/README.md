@@ -78,11 +78,15 @@ A blocked domain always covers its subdomains, so `youtube.com` in the set block
       "starts_at": "2026-01-05T09:00:00Z",
       "ends_at": "2026-01-05T10:00:00Z",
       "blocklists": ["forums", "news", "shopping", "social", "video"],
-      "deep": true
+      "deep": true,
+      "intent": "Draft chapter 3",
+      "depth_rating": 4
     }
   ]
 }
 ```
+
+`intent` and `depth_rating` are omitted when absent (a plain Block, or a Deep Session not yet rated).
 
 `blocklists` is sorted. Blocks are kept after they end (they are history, and later rules need them).
 
@@ -90,9 +94,10 @@ A blocked domain always covers its subdomains, so `youtube.com` in the set block
 
 | `type` | Fields | Notes |
 | --- | --- | --- |
-| `start_block` | `block_id`, `minutes`, `deep` (default `true`), `blocklists` (extra lists, default `[]`), `confirm_long` (default `false`), `client_time` (optional, ignored) | Starts at `server_time`. The Distraction List is always included. |
+| `start_block` | `block_id`, `minutes`, `deep` (default `true`), `blocklists` (extra lists, default `[]`), `confirm_long` (default `false`), `client_time` (optional, ignored), `intent` (optional) | Starts at `server_time`. The Distraction List is always included. The Intent is trimmed; a blank one is dropped. |
 | `extend_block` | `block_id`, `ends_at` | Moves the end of an active Block later. The 24-hour cap still applies to the whole Block. |
 | `cancel_block` | `block_id` | Always rejected: a Block can't be cancelled. |
+| `record_depth_rating` | `block_id`, `rating` | Records a Deep Session's Depth Rating (1 to 5), once, at or after its end. |
 
 **Rejection reasons** (stable codes; UI copy is mapped from these, never shown raw)
 
@@ -107,6 +112,10 @@ A blocked domain always covers its subdomains, so `youtube.com` in the set block
 | `block_cannot_be_shortened` | `extend_block` would move the end earlier. The same end is accepted and changes nothing. |
 | `block_has_ended` | `extend_block` on a Block that has already ended. |
 | `block_cannot_be_cancelled` | Any `cancel_block`. |
+| `not_a_deep_session` | `record_depth_rating` on a plain Block. |
+| `deep_session_not_ended` | `record_depth_rating` before the Deep Session's end. |
+| `invalid_depth_rating` | `rating` is outside 1 to 5. |
+| `depth_rating_already_recorded` | The Deep Session already has a Depth Rating. |
 
 ## Adding a scenario
 
