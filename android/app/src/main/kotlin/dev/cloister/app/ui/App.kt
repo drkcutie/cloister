@@ -54,7 +54,7 @@ interface Actions {
     suspend fun signInWithGoogle()
 }
 
-enum class Tab(val label: String) { Today("Today"), DayPlan("Day Plan"), Setup("Setup") }
+enum class Tab(val label: String) { Today("Today"), DayPlan("Day Plan"), Week("Week"), Setup("Setup") }
 
 @Composable
 fun App(device: Device, enforcer: Enforcer, configured: Boolean, actions: Actions) {
@@ -82,8 +82,12 @@ fun App(device: Device, enforcer: Enforcer, configured: Boolean, actions: Action
             val unrated = remember(version, serverNow.epochSecond / 60) {
                 unratedDeepSession(state, serverNow)?.takeIf { it.id !in ratingLater }
             }
+            var ritualDone by remember { mutableStateOf(false) }
+            val ritualDue = now.enforcement.ritual == dev.cloister.core.RitualScreen.Due
+            if (!ritualDue) ritualDone = false
             val screen = when {
                 !signedIn -> "sign-in"
+                ritualDue && !ritualDone -> "ritual"
                 now.session != null -> "active"
                 unrated != null && tab == Tab.Today -> "rating"
                 else -> tab.name
@@ -91,6 +95,7 @@ fun App(device: Device, enforcer: Enforcer, configured: Boolean, actions: Action
             Crossfade(screen, animationSpec = tween(240, easing = FastOutSlowInEasing), label = "screen") { s ->
                 when (s) {
                     "sign-in" -> SignInScreen(device, configured, actions)
+                    "ritual" -> RitualFlowScreen(device, state, serverNow) { ritualDone = true }
                     "active" -> ActiveScreen(now.session!!, now.serverTime, now.vpnRunning && now.appBlockerOn) { tab = Tab.Setup }
                     "rating" -> DepthRatingScreen(device, unrated!!) { ratingLater = ratingLater + unrated.id }
                     else -> Column(Modifier.fillMaxSize()) {
@@ -105,6 +110,7 @@ fun App(device: Device, enforcer: Enforcer, configured: Boolean, actions: Action
                                 shownPlan, saved = state.dayPlans.any { it.date == shownDate }, serverNow,
                                 tomorrow = tomorrow, onToggleDay = { tomorrow = !tomorrow },
                             )
+                            Tab.Week -> ScoreboardScreen(state, serverNow)
                             Tab.Setup -> SetupScreen(device, now, actions)
                         }
                     }

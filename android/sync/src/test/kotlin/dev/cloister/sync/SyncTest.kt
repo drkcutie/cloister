@@ -69,4 +69,30 @@ class SyncTest {
         assertEquals(SyncStatus.Offline, offline.status.value)
         assertTrue("youtube.com" in offline.enforcement().blockedDomains)
     }
+
+    @Test
+    fun theWeeklyTargetAndSettingsStartReachTheOtherPhone() = runBlocking {
+        assumeTrue("needs a local Supabase", url != null && key != null)
+        val email = "phone-${UUID.randomUUID()}@cloister.test"
+        val a = device("wa")
+        val b = device("wb")
+        a.signInWithPassword(email, "correct horse battery", signUp = true)
+        b.signInWithPassword(email, "correct horse battery")
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        b.startSync(scope)
+        delay(3.seconds)
+
+        assertEquals(CommandOutcome.Accepted, a.send(Command.SetWeeklyTarget(20)))
+        assertEquals(CommandOutcome.Accepted, a.send(Command.SetWeeklyTarget(15)))
+        assertEquals(
+            CommandOutcome.Accepted,
+            a.send(Command.ChangeSettings(listOf(1, 2, 3, 4, 5), "09:00", "17:00", "UTC")),
+        )
+        withTimeout(15.seconds) {
+            while (b.state().pendingWeeklyTarget == null || b.state().settingsSince == null) delay(200)
+        }
+        assertEquals(20, b.state().weeklyTarget?.hours)
+        assertEquals(15, b.state().pendingWeeklyTarget?.hours)
+        scope.cancel()
+    }
 }

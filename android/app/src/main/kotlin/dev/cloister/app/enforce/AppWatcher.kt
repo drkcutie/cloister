@@ -26,11 +26,15 @@ import dev.cloister.app.CloisterApp
 import dev.cloister.app.MainActivity
 import dev.cloister.app.ui.BlockedAppOverlay
 import dev.cloister.app.ui.LockOverlay
+import dev.cloister.app.ui.RitualOverlay
+import dev.cloister.core.RitualScreen
 
 /**
  * The app blocker. Watches which app comes to the front and, during a Block:
  * - covers a blocked app with a calm overlay (Intent and time left);
  * - covers everything with the lock overlay while the VPN is off (emergency calls stay open);
+ * - covers everything but Cloister itself with the ritual overlay while the Shutdown Ritual is
+ *   due (emergency calls stay open);
  * - steps back out of the screens that would remove Cloister (Device Admin deactivation, its
  *   uninstall dialog, switching this service off).
  */
@@ -42,7 +46,7 @@ class AppWatcher : AccessibilityService() {
     private var owner: OverlayOwner? = null
     private var allowOwnAppUntil = 0L
 
-    private enum class Kind { BlockedApp, Lock }
+    private enum class Kind { BlockedApp, Lock, Ritual }
 
     override fun onServiceConnected() {
         instance = this
@@ -102,6 +106,8 @@ class AppWatcher : AccessibilityService() {
         val ownAppAllowed = fg == packageName && SystemClock.elapsedRealtime() < allowOwnAppUntil
         when {
             now.vpnOffDuringBlock && fg !in lockAllowed() && !ownAppAllowed -> showOverlay(Kind.Lock, now)
+            now.enforcement.ritual == RitualScreen.Due && fg != packageName && fg !in lockAllowed() ->
+                showOverlay(Kind.Ritual, now)
             fg != null && fg != packageName && fg in now.enforcement.blockedApps -> showOverlay(Kind.BlockedApp, now)
             else -> hideOverlay()
         }
@@ -110,7 +116,10 @@ class AppWatcher : AccessibilityService() {
     /** Apps the lock overlay leaves open: the VPN consent dialog and the phone. */
     private fun lockAllowed(): Set<String> {
         val dialer = runCatching { getSystemService(TelecomManager::class.java).defaultDialerPackage }.getOrNull()
-        return setOfNotNull("com.android.vpndialogs", "com.android.phone", "com.android.emergency", dialer)
+        return setOfNotNull(
+            "com.android.vpndialogs", "com.android.phone", "com.android.emergency", "com.android.dialer",
+            "com.google.android.dialer", "com.android.server.telecom", dialer,
+        )
     }
 
     private fun showOverlay(kind: Kind, now: EnforcementNow) {
@@ -121,7 +130,11 @@ class AppWatcher : AccessibilityService() {
             setViewTreeLifecycleOwner(o)
             setViewTreeSavedStateRegistryOwner(o)
             setViewTreeViewModelStoreOwner(o)
-            contentDescription = if (kind == Kind.Lock) "Cloister lock overlay" else "Cloister blocked app overlay"
+            contentDescription = when (kind) {
+                Kind.Lock -> "Cloister lock overlay"
+                Kind.Ritual -> "Cloister Shutdown Ritual overlay"
+                Kind.BlockedApp -> "Cloister blocked app overlay"
+            }
             setContent {
                 val state = CloisterApp.instance.enforcer.now
                 val current = androidx.compose.runtime.produceState(now) { state.collect { value = it } }.value
@@ -142,10 +155,18 @@ class AppWatcher : AccessibilityService() {
                                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                             )
                         },
-                        onEmergencyCall = {
+                        onEmergencyCall = ::emergencyCall,
+                    )
+                    Kind.Ritual -> RitualOverlay(
+                        current.lockdown, current.nextWorkdayStart,
+                        onOpenRitual = {
                             hideOverlay()
-                            startActivity(Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            startActivity(
+                                Intent(this@AppWatcher, MainActivity::class.java)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+                            )
                         },
+                        onEmergencyCall = ::emergencyCall,
                     )
                 }
             }
@@ -164,8 +185,18 @@ class AppWatcher : AccessibilityService() {
         Log.i(TAG, "overlay shown: $kind over $foreground")
     }
 
+    /** Opens the emergency dialer (the phone's own dialer if it has none); both stay allowed. */
+    private fun emergencyCall() {
+        hideOverlay()
+        val emergency = Intent("com.android.phone.EmergencyDialer.DIAL").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { startActivity(emergency) }.onFailure {
+            startActivity(Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
     private fun hideOverlay() {
         val view = overlay ?: return
+        Log.i(TAG, "overlay hidden: $overlayKind")
         runCatching { getSystemService(WindowManager::class.java).removeView(view) }
         owner?.destroy()
         overlay = null

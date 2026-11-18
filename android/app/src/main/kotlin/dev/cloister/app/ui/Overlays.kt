@@ -110,3 +110,35 @@ fun LockOverlay(session: Block?, offsetMillis: Long, onTurnVpnOn: () -> Unit, on
         }
     }
 }
+
+/**
+ * The ritual lock overlay: the Shutdown Ritual is due, so the phone isn't the way out. One way
+ * forward (the ritual, in Cloister) and emergency calls, which always stay open.
+ */
+@Composable
+fun RitualOverlay(lockdown: dev.cloister.core.Lockdown?, nextWorkdayStart: Instant?, onOpenRitual: () -> Unit, onEmergencyCall: () -> Unit) {
+    val c = Night
+    CloisterTheme(night = true) {
+        Column(
+            Modifier.fillMaxSize().background(c.ground).systemBarsPadding().padding(horizontal = 28.dp, vertical = 40.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Masthead("Shutdown Ritual")
+            Column(Modifier.widthIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                Text("The workday has ended.", style = Type.display, color = c.ink, modifier = Modifier.semantics { heading() })
+                Text(
+                    "The Shutdown Ritual is due. Capture your Loose Ends and plan tomorrow; completing it here unlocks every Device.",
+                    style = Type.body, color = c.ink2,
+                )
+                if (lockdown == dev.cloister.core.Lockdown.EveningLockdown && nextWorkdayStart != null) {
+                    Text("Workday Start ${Copy.clock(nextWorkdayStart)}.", style = Type.detail, color = c.ink2)
+                }
+            }
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                CommitButton("Open the Shutdown Ritual", onClick = onOpenRitual)
+                QuietButton("Emergency call", Modifier.fillMaxWidth(), onClick = onEmergencyCall)
+                Spacer(Modifier)
+            }
+        }
+    }
+}
