@@ -11,6 +11,7 @@ chrono-tz.workspace = true
 cloister-core = { path = "../cloister-core" }
 cloister-enforcer = { path = "../cloister-enforcer" }
 cloister-sync = { path = "../cloister-sync" }
+iana-time-zone = "0.1"
 
 [dev-dependencies]
 tempfile = "3"

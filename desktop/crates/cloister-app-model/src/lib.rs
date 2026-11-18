@@ -13,6 +13,7 @@ mod enforcer;
 pub mod format;
 mod hold;
 mod notice;
+mod onboarding;
 mod ritual;
 mod today;
 
@@ -27,6 +28,10 @@ pub use enforcer::{Enforcer, SocketEnforcer};
 pub use format::Zone;
 pub use hold::Hold;
 pub use notice::{Notice, NoticeKind};
+pub use onboarding::{
+    day_name, distraction_list, install_service_command, Category, Onboarding, OnboardingMarker,
+    OnboardingStep, Page, Progress, SignInForm, WorkdaysForm, PHILOSOPHY,
+};
 pub use ritual::{
     deep_hours_this_week, shutdown_delay, shutdown_warning, use_shutdown_delay, DelayView, Review,
     ReviewSession, RitualFlow, RitualStep, ShutdownWarning,

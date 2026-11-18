@@ -24,7 +24,7 @@ pub struct DevicesView {
 pub struct DeviceRow {
     pub name: String,
     pub platform: &'static str,
-    /// "Enforcing" or "Offline": a word beside a square.
+    /// "Enforcing", "Enforcing with Hardcore Mode" or "Offline": a word beside a square.
     pub status: &'static str,
     pub enforcing: bool,
     pub this_device: bool,
@@ -60,7 +60,10 @@ pub fn devices_view(
             .map(|d| DeviceRow {
                 name: d.name.clone(),
                 platform: platform_name(d.platform),
-                status: d.status.label(),
+                status: match (d.status, d.hardcore) {
+                    (DeviceStatus::Enforcing, true) => "Enforcing with Hardcore Mode",
+                    (status, _) => status.label(),
+                },
                 enforcing: d.status == DeviceStatus::Enforcing,
                 this_device: d.this_device,
                 seen: if day(d.last_seen_at) == day(now) {
@@ -73,6 +76,44 @@ pub fn devices_view(
     }
 }
 
+/// Where this user's Cloister data lives (the mirror, the onboarding marker):
+/// `~/Library/Application Support/Cloister` on macOS, `%APPDATA%\Cloister` on Windows,
+/// `$XDG_DATA_HOME/cloister` (or `~/.local/share/cloister`) on Linux.
+pub fn data_dir() -> std::path::PathBuf {
+    use std::path::PathBuf;
+    let home = || PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+    if cfg!(target_os = "macos") {
+        home().join("Library/Application Support/Cloister")
+    } else if cfg!(windows) {
+        PathBuf::from(std::env::var_os("APPDATA").unwrap_or_default()).join("Cloister")
+    } else {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home().join(".local/share"))
+            .join("cloister")
+    }
+}
+
+/// This computer's name for the Devices screen.
+fn computer_name() -> String {
+    let output = |program: &str, args: &[&str]| {
+        std::process::Command::new(program)
+            .args(args)
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|n| !n.is_empty())
+    };
+    if cfg!(target_os = "macos") {
+        output("scutil", &["--get", "ComputerName"]).unwrap_or_else(|| "This Mac".into())
+    } else {
+        std::env::var("COMPUTERNAME")
+            .ok()
+            .or_else(|| output("hostname", &[]))
+            .unwrap_or_else(|| "This computer".into())
+    }
+}
+
 /// This Device's account, when the backend is configured (`CLOISTER_API_URL`,
 /// `CLOISTER_ANON_KEY`). It shares its mirror with `cloister-device` (`$CLOISTER_MIRROR`, else
 /// the user data dir), so signing in there signs the app in too.
@@ -80,24 +121,12 @@ pub fn open_account() -> Option<Device> {
     let backend = Backend::from_env()?;
     let mirror = std::env::var_os("CLOISTER_MIRROR")
         .map(std::path::PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|h| {
-                std::path::PathBuf::from(h)
-                    .join("Library/Application Support/Cloister/mirror.sqlite")
-            })
-        })?;
-    let name = std::process::Command::new("scutil")
-        .args(["--get", "ComputerName"])
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| "This Mac".into());
+        .unwrap_or_else(|| data_dir().join("mirror.sqlite"));
     Device::open(
         backend,
         mirror,
         DeviceInfo {
-            name,
+            name: computer_name(),
             platform: Platform::current(),
         },
     )

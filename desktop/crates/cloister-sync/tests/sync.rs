@@ -181,6 +181,70 @@ fn the_devices_list_shows_each_device_and_its_status() {
     );
 }
 
+/// A phone registering itself the way the Android app does (`android/sync` Device.register).
+fn register_phone(session: &cloister_sync::Session, id: &str, hardcore: bool) -> u16 {
+    let backend = common::backend();
+    let answer = ureq::post(&format!("{}/rest/v1/devices?on_conflict=id", backend.url()))
+        .set("apikey", backend.anon_key())
+        .set("Authorization", &format!("Bearer {}", session.access_token))
+        .set("Prefer", "resolution=merge-duplicates,return=minimal")
+        .send_json(serde_json::json!({
+            "id": id, "name": "Pixel", "platform": "android", "enforcing": true, "hardcore": hardcore,
+        }));
+    match answer {
+        Ok(r) => r.status(),
+        Err(ureq::Error::Status(code, _)) => code,
+        Err(e) => panic!("{e}"),
+    }
+}
+
+#[test]
+#[ignore = "needs a local Supabase; run backend/scripts/test.sh"]
+fn the_devices_list_says_which_phone_runs_hardcore_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_a, b) = two_devices(dir.path(), "hardcore");
+    std::thread::sleep(Duration::from_millis(1100));
+    let phone = common::sign_in(&common::backend(), &account_email(&b));
+    let id = "6f1c1a52-0a7e-4f5e-9d47-6b8f0f3c2a11";
+    assert_eq!(register_phone(&phone, id, true), 201);
+    let list = b.devices().unwrap();
+    let pixel = list
+        .iter()
+        .find(|d| d.name == "Pixel")
+        .expect("the phone is listed");
+    assert!(pixel.hardcore);
+    assert!(list
+        .iter()
+        .filter(|d| d.name != "Pixel")
+        .all(|d| !d.hardcore));
+}
+
+#[test]
+#[ignore = "needs a local Supabase; run backend/scripts/test.sh"]
+fn only_a_phone_can_claim_hardcore_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, _b) = two_devices(dir.path(), "hardcore-desktop");
+    std::thread::sleep(Duration::from_millis(1100));
+    let session = common::sign_in(&common::backend(), &account_email(&a));
+    let backend = common::backend();
+    let answer = ureq::post(&format!("{}/rest/v1/devices?on_conflict=id", backend.url()))
+        .set("apikey", backend.anon_key())
+        .set("Authorization", &format!("Bearer {}", session.access_token))
+        .set("Prefer", "return=minimal")
+        .send_json(serde_json::json!({
+            "id": "0d4b3a0e-6e0b-4b8a-8f86-3c1b2d6f9e01", "name": "Mac", "platform": "macos", "hardcore": true,
+        }));
+    assert!(
+        matches!(answer, Err(ureq::Error::Status(400, _))),
+        "{answer:?}"
+    );
+}
+
+/// The email `device`'s account signed in with.
+fn account_email(device: &Device) -> String {
+    device.email().expect("signed in")
+}
+
 #[test]
 #[ignore = "needs a local Supabase; run backend/scripts/test.sh"]
 fn a_blocklist_addition_on_one_device_applies_on_another_at_once_but_a_removal_waits() {

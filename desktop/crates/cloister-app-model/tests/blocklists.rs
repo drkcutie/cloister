@@ -301,6 +301,7 @@ fn the_devices_screen_shows_each_device_and_this_ones_sync_state() {
             status: DeviceStatus::Enforcing,
             last_seen_at: t("2026-01-05T08:59:40Z"),
             this_device: true,
+            hardcore: false,
         },
         DeviceSummary {
             id: "b".into(),
@@ -309,6 +310,16 @@ fn the_devices_screen_shows_each_device_and_this_ones_sync_state() {
             status: DeviceStatus::Offline,
             last_seen_at: t("2026-01-03T18:00:00Z"),
             this_device: false,
+            hardcore: false,
+        },
+        DeviceSummary {
+            id: "c".into(),
+            name: "Phone".into(),
+            platform: DevicePlatform::Android,
+            status: DeviceStatus::Enforcing,
+            last_seen_at: t("2026-01-05T08:59:50Z"),
+            this_device: false,
+            hardcore: true,
         },
     ];
     let view = devices_view(&devices, SyncStatus::Offline, now, &Zone::Utc);
@@ -332,6 +343,13 @@ fn the_devices_screen_shows_each_device_and_this_ones_sync_state() {
         [
             ("Studio Mac", "macOS", "Enforcing", true, "Seen at 08:59."),
             ("Pixel", "Android", "Offline", false, "Seen on Sat 3 Jan."),
+            (
+                "Phone",
+                "Android",
+                "Enforcing with Hardcore Mode",
+                false,
+                "Seen at 08:59."
+            ),
         ]
     );
     assert_eq!(

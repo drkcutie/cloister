@@ -923,6 +923,7 @@ dependencies = [
  "cloister-core",
  "cloister-enforcer",
  "cloister-sync",
+ "iana-time-zone",
  "tempfile",
 ]
 

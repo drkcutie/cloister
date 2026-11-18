@@ -101,6 +101,9 @@ pub struct DeviceSummary {
     pub status: DeviceStatus,
     pub last_seen_at: DateTime<Utc>,
     pub this_device: bool,
+    /// An Android phone set up as Device Owner (Hardcore Mode): its enforcement can't be
+    /// turned off.
+    pub hardcore: bool,
 }
 
 /// The backend's answer to a command.
@@ -201,6 +204,11 @@ impl Device {
     }
 
     /// Forget the session. The mirror keeps enforcing what it knows.
+    /// The signed-in account's email, if known.
+    pub fn email(&self) -> Option<String> {
+        self.session().ok().and_then(|s| s.email)
+    }
+
     pub fn sign_out(&self) -> Result<()> {
         *lock(&self.inner.session) = None;
         lock(&self.inner.mirror).remove(SESSION_KEY)
@@ -328,11 +336,13 @@ impl Device {
             platform: Platform,
             enforcing: bool,
             last_seen_at: DateTime<Utc>,
+            #[serde(default)]
+            hardcore: bool,
         }
         let session = self.session()?;
         let rows = self.online(self.inner.backend.rest_get(
             &session,
-            "devices?select=id,name,platform,enforcing,last_seen_at&order=created_at,id",
+            "devices?select=id,name,platform,enforcing,last_seen_at,hardcore&order=created_at,id",
         ))?;
         let rows: Vec<Row> =
             serde_json::from_value(rows).map_err(|e| Error::Protocol(e.to_string()))?;
@@ -346,6 +356,7 @@ impl Device {
                 name: r.name,
                 platform: r.platform,
                 last_seen_at: r.last_seen_at,
+                hardcore: r.hardcore,
             })
             .collect())
     }
