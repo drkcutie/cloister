@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "cloister"
-include(":core", ":sync")
+include(":core", ":sync", ":app")
