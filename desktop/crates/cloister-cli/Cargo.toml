@@ -1,0 +1,15 @@
+[package]
+name = "cloister-cli"
+description = "Developer CLI for the Cloister enforcement service."
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "cloister"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+cloister-core = { path = "../cloister-core" }
+cloister-enforcer = { path = "../cloister-enforcer" }

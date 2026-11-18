@@ -2,7 +2,7 @@
 
 A cross-device blocker built on Cal Newport's *Deep Work*. It makes focused work unavoidable during the day, and once the day ends it makes not working unavoidable too.
 
-> Status: design phase. Nothing is implemented yet.
+> Status: early. The rules engine and macOS enforcement service exist; there is no GUI yet.
 
 ## What it does
 
@@ -22,6 +22,17 @@ A cross-device blocker built on Cal Newport's *Deep Work*. It makes focused work
 | macOS, Windows, Linux | Rust + [GPUI](https://www.gpui.rs/) | Root service: local DNS filter, firewall, app blocker, kiosk-mode ritual window |
 | Android | Kotlin + Jetpack Compose | VPN DNS filter, accessibility-based app blocker, lock overlay, optional Device Owner *Hardcore Mode* |
 | Sync | Supabase | Postgres enforces the rules on the server; Devices keep enforcing offline |
+
+## Repository layout
+
+| Path | Contents |
+| --- | --- |
+| `desktop/` | Rust workspace crates: rules engine, enforcement service, developer CLI. See [`desktop/README.md`](desktop/README.md). |
+| `android/` | Kotlin app (placeholder). |
+| `backend/` | Supabase project (placeholder). |
+| `fixtures/rules/` | Shared JSON rule scenarios run by every rules engine. See [`fixtures/README.md`](fixtures/README.md). |
+| `shared/` | Data shared by every platform, such as the built-in Blocklists. |
+| `scripts/` | Install scripts and root-only smoke tests. |
 
 ## Docs
 
