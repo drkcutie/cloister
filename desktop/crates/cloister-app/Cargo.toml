@@ -25,3 +25,7 @@ tray-icon = "0.26"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray"] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow", "NSScreen", "NSRunningApplication"] }
+
+# Windows: the keyboard hook and topmost windows.
+[target.'cfg(windows)'.dependencies]
+cloister-kiosk = { path = "../cloister-kiosk" }

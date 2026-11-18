@@ -1,0 +1,15 @@
+[package]
+name = "cloister-kiosk"
+description = "The Shutdown Ritual kiosk on Windows: which keys are swallowed (pure, tested), the low-level keyboard hook and topmost windows."
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }

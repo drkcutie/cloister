@@ -1,11 +1,12 @@
 //! `cloister`: developer CLI that talks to the enforcement service over its IPC socket.
 //!
 //! ```text
-//! cloister block start --minutes N [--plain] [--confirm-long] [--blocklist ID]...
+//! cloister block start --minutes N [--plain] [--confirm-long] [--blocklist ID]... [--extra-app APP]...
 //! cloister block extend --id ID --until 2026-01-05T11:00:00Z [--confirm-long]
 //! cloister status
 //! ```
-//! Every command takes `--socket PATH` (default `$CLOISTER_SOCKET` or `/var/run/cloister.sock`).
+//! Every command takes `--socket PATH` (default `$CLOISTER_SOCKET` or the installed service's
+//! socket, `/var/run/cloister.sock`; `C:\ProgramData\Cloister\cloister.sock` on Windows).
 //! There is no command to stop a Block.
 
 use std::path::PathBuf;
@@ -16,7 +17,7 @@ use cloister_core::Command;
 use cloister_enforcer::ipc::{self, Request, Response};
 
 const USAGE: &str = "usage:
-  cloister block start --minutes N [--plain] [--confirm-long] [--blocklist ID]...
+  cloister block start --minutes N [--plain] [--confirm-long] [--blocklist ID]... [--extra-app APP]...
   cloister block extend --id ID --until RFC3339 [--confirm-long]
   cloister status
 options: --socket PATH";
@@ -39,6 +40,7 @@ struct Flags {
     plain: bool,
     confirm_long: bool,
     blocklists: Vec<String>,
+    extra_apps: Vec<String>,
     id: Option<String>,
     until: Option<DateTime<Utc>>,
 }
@@ -60,6 +62,7 @@ fn parse(args: &[String]) -> Result<Flags, String> {
             "--plain" => f.plain = true,
             "--confirm-long" => f.confirm_long = true,
             "--blocklist" => f.blocklists.push(value()?),
+            "--extra-app" => f.extra_apps.push(value()?),
             "--id" => f.id = Some(value()?),
             "--until" => f.until = Some(value()?.parse().map_err(|e| format!("--until: {e}"))?),
             other => return Err(format!("unknown option {other}\n{USAGE}")),
@@ -91,7 +94,7 @@ fn run(args: &[String]) -> Result<(), String> {
                 client_time: Some(Utc::now()),
                 intent: None,
                 extra_domains: vec![],
-                extra_apps: vec![],
+                extra_apps: f.extra_apps,
             },
         },
         ["block", "extend"] => Request::Command {

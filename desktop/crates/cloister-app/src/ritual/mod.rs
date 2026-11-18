@@ -166,9 +166,9 @@ impl RitualView {
             }),
         ];
         loose_end.update(cx, |s, cx| s.focus(window, cx));
-        let poll = cx.spawn(async move |this, cx| loop {
+        let poll = cx.spawn_in(window, async move |this, cx| loop {
             cx.background_executor().timer(POLL).await;
-            let alive = this.update(cx, |this, cx| view(this).poll(cx));
+            let alive = this.update_in(cx, |this, window, cx| view(this).poll(window, cx));
             if !matches!(alive, Ok(true)) {
                 break;
             }
@@ -193,7 +193,7 @@ impl RitualView {
 
     /// Once a second: quit when cloisterd no longer says the ritual is due, else re-assert the
     /// lock (something may have activated another app) and redraw. Returns whether to go on.
-    fn poll(&mut self, cx: &mut Cx) -> bool {
+    fn poll(&mut self, window: &mut Window, cx: &mut Cx) -> bool {
         if let Some(after) = self.kiosk.escape_after {
             if self.started.elapsed() >= after {
                 eprintln!("cloister-app: debug build, ritual kiosk lifted after {after:?}");
@@ -211,6 +211,9 @@ impl RitualView {
         }
         if self.kiosk.lock {
             kiosk::lock();
+            if !cfg!(target_os = "macos") {
+                kiosk::reassert(window, cfg!(target_os = "linux"));
+            }
         }
         cx.notify();
         true

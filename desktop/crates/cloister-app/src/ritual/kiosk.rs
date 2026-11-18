@@ -1,4 +1,11 @@
-//! The Shutdown Ritual's kiosk lock on macOS: AppKit presentation options (Dock and menu bar
+//! The Shutdown Ritual's kiosk lock.
+//!
+//! - Windows: the windows are made topmost once a second and a low-level keyboard hook swallows
+//!   the Windows keys, Alt-Tab and the like (`cloister-kiosk`). The service starts the window
+//!   again if it is closed.
+//! - Linux: Wayland can't lock the screen. The window asks to be active and full screen once a
+//!   second ([`reassert`]), and its systemd user unit starts it again a second after it exits.
+//! - macOS: AppKit presentation options (Dock and menu bar
 //! hidden, process switching, Force Quit and Hide disabled) and window levels above everything
 //! else on every Space. GPUI doesn't expose these, so they are set here through `objc2`.
 //!
@@ -127,9 +134,27 @@ pub fn lock() -> Option<String> {
     {
         mac::lock().map(mac::describe)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
+    {
+        cloister_kiosk::windows::install_keyboard_hook();
+        cloister_kiosk::windows::raise_windows();
+        Some("topmost windows, keyboard hook".into())
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
     {
         None
+    }
+}
+
+/// Where the OS offers no lock (Linux, and as a second line on Windows): bring the window
+/// back to the front, and make it full screen when `fullscreen`. Called once a second.
+/// Plain GPUI, so it is compiled (and type-checked) on every OS.
+pub fn reassert(window: &mut gpui_kit::Window, fullscreen: bool) {
+    if !window.is_window_active() {
+        window.activate_window();
+    }
+    if fullscreen && !window.is_fullscreen() {
+        window.toggle_fullscreen();
     }
 }
 
@@ -137,4 +162,6 @@ pub fn lock() -> Option<String> {
 pub fn unlock() {
     #[cfg(target_os = "macos")]
     mac::unlock();
+    #[cfg(windows)]
+    cloister_kiosk::windows::remove_keyboard_hook();
 }
