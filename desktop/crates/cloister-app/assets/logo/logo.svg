@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="284 218 687 784" width="687" height="784">
+  <defs>
+    <linearGradient id="floor" x1="0" y1="722" x2="0" y2="912" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#242120"></stop>
+      <stop offset="1" stop-color="#3d3734"></stop>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="795" x2="0" y2="912" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d3c9bd"></stop>
+      <stop offset="1" stop-color="#7f7670"></stop>
+    </linearGradient>
+    <clipPath id="window">
+      <path d="M583,688 V613 A44,44 0 0 1 671,613 V688 Z"></path>
+    </clipPath>
+  </defs>
+
+  
+  <path d="M288,998 V561.5 A339.5,339.5 0 0 1 967,561.5 V998 Z" fill="#f6f1e7"></path>
+  
+  <path d="M370,912 V553 A257,257 0 0 1 884,553 V912 Z" fill="#121110"></path>
+
+  
+  <path d="M425,912 V583.5 A202.5,202.5 0 0 1 830,583.5 V912 Z" fill="#403a37"></path>
+  <path d="M478,912 V582.5 A149.5,149.5 0 0 1 777,582.5 V912 Z" fill="#121110"></path>
+
+  
+  <path d="M522,912 V597.5 A104.5,104.5 0 0 1 731,597.5 V912 Z" fill="#2b2725"></path>
+  <path d="M552,912 V596.5 A75.5,75.5 0 0 1 703,596.5 V912 Z" fill="#121110"></path>
+
+  
+  <g clip-path="url(#window)">
+    <rect x="583" y="569" width="88" height="119" fill="#f3eee6"></rect>
+    <polygon points="583,688 671,688 671,598" fill="#cdc2b6"></polygon>
+  </g>
+
+  
+  <polygon points="370,912 370,885 552,722 703,722 884,885 884,912" fill="url(#floor)"></polygon>
+  
+  <polygon points="668,722 700,722 738,795 716,795" fill="#4a4440" opacity="0.6"></polygon>
+  
+  <polygon points="595,795 722,795 775,912 480,912" fill="url(#beam)"></polygon>
+</svg>

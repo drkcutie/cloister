@@ -1,0 +1,18 @@
+[package]
+name = "cloister-app"
+description = "The Cloister desktop app (GPUI): begin and live through Deep Sessions."
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "cloister-app"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+cloister-app-model = { path = "../cloister-app-model" }
+cloister-core = { path = "../cloister-core" }
+# Pin exactly: gpui-kit re-exports GPUI (gpui-pre) and moves fast. See desktop/README.md.
+gpui-kit = "=0.10.0"
+tray-icon = "0.26"
