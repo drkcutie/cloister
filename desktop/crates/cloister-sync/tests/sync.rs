@@ -168,6 +168,41 @@ fn an_offline_device_keeps_enforcing_and_catches_up_on_reconnect() {
 
 #[test]
 #[ignore = "needs a local Supabase; run backend/scripts/test.sh"]
+fn a_block_started_offline_is_enforced_at_once_and_reaches_the_account_later() {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = two_devices(dir.path(), "queue");
+    drop(b);
+    let unreachable = Backend::new("http://127.0.0.1:9", common::backend().anon_key());
+    let offline = device(&unreachable, &dir.path().join("b.sqlite"), "Desktop B");
+    let block = start_block(30, &["work"]);
+    assert_eq!(offline.send(&block).unwrap(), CommandOutcome::Accepted);
+    assert!(blocks(&offline, "github.com"), "enforced here at once");
+    assert_eq!(offline.queued().unwrap(), 1);
+    // A loosening can't be queued: it needs the backend.
+    let cancel = Command::CancelBlock {
+        block_id: "x".into(),
+    };
+    assert!(offline
+        .send(&Command::OptOutOfBlocklist {
+            blocklist: "news".into()
+        })
+        .is_err());
+    assert!(offline.send(&cancel).is_err());
+    drop(offline);
+    // Back online, the queue goes to the backend, which decides again.
+    let b = device(
+        &common::backend(),
+        &dir.path().join("b.sqlite"),
+        "Desktop B",
+    );
+    b.pull().unwrap();
+    assert_eq!(b.queued().unwrap(), 0);
+    a.pull().unwrap();
+    assert!(blocks(&a, "github.com"), "the other Device has it");
+}
+
+#[test]
+#[ignore = "needs a local Supabase; run backend/scripts/test.sh"]
 fn the_devices_list_shows_each_device_and_its_status() {
     let dir = tempfile::tempdir().unwrap();
     let (a, b) = two_devices(dir.path(), "devices");

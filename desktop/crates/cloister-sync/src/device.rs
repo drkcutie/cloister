@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use cloister_core::{
-    enforcement, planned_deep_sessions, Block, Command, DayPlan, Enforcement, State,
+    decide, enforcement, planned_deep_sessions, Block, Command, DayPlan, Enforcement, Outcome,
+    State,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -146,6 +147,33 @@ impl Default for SyncOptions {
 
 const SESSION_KEY: &str = "session";
 const OFFSET_KEY: &str = "server_offset_ms";
+const QUEUE_KEY: &str = "queued_commands";
+
+/// A command decided here while offline, sent to the backend when it can be reached.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct Queued {
+    command: Command,
+    queued_at: DateTime<Utc>,
+}
+
+/// Commands that may be decided here while offline and sent later: those that only tighten
+/// or record (the backend decides again when they arrive, and its answer counts), and the
+/// Shutdown Ritual's completion. A completion decided offline shows here at once, but the
+/// enforcement service only lifts the ritual once the backend has accepted it.
+fn queueable(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::StartBlock { .. }
+            | Command::ExtendBlock { .. }
+            | Command::StartQuitSocialBlock { .. }
+            | Command::AddBlocklistEntry { .. }
+            | Command::OptInToBlocklist { .. }
+            | Command::RecordDepthRating { .. }
+            | Command::RecordBreach { .. }
+            | Command::CaptureLooseEnd { .. }
+            | Command::CompleteRitual { .. }
+    )
+}
 
 /// A Device. Cheap to clone; all clones share the mirror and sync state.
 #[derive(Clone)]
@@ -215,8 +243,84 @@ impl Device {
     }
 
     /// Send a command to the backend, which decides at server time. The mirror is up to
-    /// date with the backend when this returns.
+    /// date with the backend when this returns. Offline, a command that only tightens (or
+    /// completes the ritual) is decided here, shown at once and queued for the backend.
     pub fn send(&self, command: &Command) -> Result<CommandOutcome> {
+        match self.send_online(command) {
+            Ok(outcome) => {
+                // Either way the backend knows best: a rejection often means this mirror is behind.
+                self.pull()?;
+                Ok(outcome)
+            }
+            Err(Error::Offline(e)) if queueable(command) => {
+                let now = self.server_time();
+                let decision = decide(&self.state()?, command, now);
+                match decision.outcome {
+                    Outcome::Accepted => {
+                        let mut queue = self.queue()?;
+                        queue.push(Queued {
+                            command: command.clone(),
+                            queued_at: now,
+                        });
+                        self.save_queue(&queue)?;
+                        eprintln!("cloister-sync: offline, queued for the backend: {e}");
+                        Ok(CommandOutcome::Accepted)
+                    }
+                    Outcome::Rejected { reason } => Ok(CommandOutcome::Rejected {
+                        reason: reason.code().to_string(),
+                    }),
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn queue(&self) -> Result<Vec<Queued>> {
+        Ok(lock(&self.inner.mirror)
+            .get(QUEUE_KEY)?
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default())
+    }
+
+    fn save_queue(&self, queue: &[Queued]) -> Result<()> {
+        let mirror = lock(&self.inner.mirror);
+        if queue.is_empty() {
+            mirror.remove(QUEUE_KEY)
+        } else {
+            mirror.set(
+                QUEUE_KEY,
+                &serde_json::to_string(queue).expect("commands serialize"),
+            )
+        }
+    }
+
+    /// Commands decided offline and not yet answered by the backend.
+    pub fn queued(&self) -> Result<usize> {
+        Ok(self.queue()?.len())
+    }
+
+    /// Send the queued commands, in order. Each is dropped once the backend has answered (it
+    /// decides again; a rejection stands). Stops at the first that can't reach it.
+    fn flush_queue(&self) -> Result<()> {
+        let mut queue = self.queue()?;
+        while let Some(first) = queue.first() {
+            match self.send_online(&first.command) {
+                Ok(CommandOutcome::Rejected { reason }) => {
+                    eprintln!("cloister-sync: the backend refused a queued command: {reason}");
+                }
+                Ok(CommandOutcome::Accepted) => {}
+                Err(e) => {
+                    self.save_queue(&queue)?;
+                    return Err(e);
+                }
+            }
+            queue.remove(0);
+            self.save_queue(&queue)?;
+        }
+        Ok(())
+    }
+
+    fn send_online(&self, command: &Command) -> Result<CommandOutcome> {
         let session = self.session()?;
         let answer = self.online(self.inner.backend.rest_post(
             &session,
@@ -231,13 +335,12 @@ impl Device {
             },
             _ => return Err(Error::Protocol(answer.to_string())),
         };
-        // Either way the backend knows best: a rejection often means this mirror is behind.
-        self.pull()?;
         Ok(outcome)
     }
 
     /// Re-read the account's Blocks into the mirror. Returns whether anything changed.
     pub fn pull(&self) -> Result<bool> {
+        self.flush_queue()?;
         let session = self.session()?;
         let backend = &self.inner.backend;
         let rows = self.online(backend.rest_get(
@@ -278,9 +381,17 @@ impl Device {
         Ok(changed)
     }
 
-    /// The state this Device enforces (from the mirror; works offline).
+    /// The state this Device enforces (from the mirror; works offline), with the commands
+    /// queued offline applied on top as they were decided.
     pub fn state(&self) -> Result<State> {
-        lock(&self.inner.mirror).state()
+        let mut state = lock(&self.inner.mirror).state()?;
+        for queued in self.queue()? {
+            let decision = decide(&state, &queued.command, queued.queued_at);
+            if decision.outcome == Outcome::Accepted {
+                state = decision.state;
+            }
+        }
+        Ok(state)
     }
 
     /// The Day Plan for `date` (from the mirror; works offline): the saved one, or else the
