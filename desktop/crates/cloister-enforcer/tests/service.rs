@@ -7,9 +7,10 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, Utc};
 use cloister_core::{
-    BlocklistEdits, BlocklistRemoval, Command, DayPlan, Enforcement, EntryKind, Lockdown, Ritual,
-    RitualScreen, Settings, ShutdownDelay, Slot,
+    BlocklistEdits, BlocklistRemoval, Command, DayPlan, Enforcement, EntryKind, Lockdown,
+    PendingSettings, Ritual, RitualScreen, Settings, ShutdownDelay, Slot, State,
 };
+use cloister_enforcer::account::{Account, AccountLink, Fetched};
 use cloister_enforcer::dns::SharedDomains;
 use cloister_enforcer::ipc::{self, Planning, Request, Response};
 use cloister_enforcer::service::shared_domains;
@@ -37,22 +38,92 @@ impl Platform for Recorder {
     }
 }
 
+/// Trusted time, and the wall clock when a test moves it away from that.
+type Times = (DateTime<Utc>, Option<DateTime<Utc>>);
+
 #[derive(Clone)]
-struct FakeClock(Arc<Mutex<DateTime<Utc>>>);
+struct FakeClock(Arc<Mutex<Times>>);
 
 impl FakeClock {
     fn at(s: &str) -> Self {
-        FakeClock(Arc::new(Mutex::new(s.parse().unwrap())))
+        FakeClock(Arc::new(Mutex::new((s.parse().unwrap(), None))))
     }
     fn advance(&self, d: Duration) {
-        *self.0.lock().unwrap() += d;
+        self.0.lock().unwrap().0 += d;
+    }
+    fn set_wall(&self, s: &str) {
+        self.0.lock().unwrap().1 = Some(s.parse().unwrap());
     }
 }
 
 impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
-        *self.0.lock().unwrap()
+        self.0.lock().unwrap().0
     }
+    fn wall_hint(&self) -> Option<DateTime<Utc>> {
+        self.0.lock().unwrap().1
+    }
+    fn set_server_time(&mut self, server_time: DateTime<Utc>) {
+        self.0.lock().unwrap().0 = server_time;
+    }
+}
+
+/// The backend as the service fetches it: whatever the test puts there, for one account.
+#[derive(Clone)]
+struct FakeAccount(Arc<Mutex<(Vec<String>, Fetched)>>);
+
+impl FakeAccount {
+    fn new(server_time: &str) -> Self {
+        FakeAccount(Arc::new(Mutex::new((
+            vec![],
+            Fetched {
+                user_id: "me".into(),
+                blocks: vec![],
+                state: State::default(),
+                server_time: server_time.parse().unwrap(),
+            },
+        ))))
+    }
+    fn change(&self, f: impl FnOnce(&mut Fetched)) {
+        f(&mut self.0.lock().unwrap().1)
+    }
+    fn tokens(&self) -> Vec<String> {
+        self.0.lock().unwrap().0.clone()
+    }
+}
+
+impl Account for FakeAccount {
+    fn fetch(&self, access_token: &str) -> Result<Fetched, String> {
+        let mut inner = self.0.lock().unwrap();
+        inner.0.push(access_token.to_string());
+        let mut fetched = inner.1.clone();
+        if access_token == "someone-else" {
+            fetched.user_id = "other".into();
+        }
+        Ok(fetched)
+    }
+}
+
+fn link(r: &Running, dir: &tempfile::TempDir, account: &FakeAccount) {
+    let mut link = AccountLink::new(
+        Box::new(account.clone()),
+        Some(dir.path().join("account.json")),
+    );
+    link.min_interval = std::time::Duration::ZERO;
+    r.service.lock().unwrap().set_account(link);
+}
+
+fn sync_with_token(r: &Running, token: &str, planning: Planning) -> Response {
+    ipc::send(
+        &r.socket,
+        &Request::Sync {
+            blocks: vec![],
+            blocklists: None,
+            planning: Some(planning),
+            access_token: Some(token.into()),
+        },
+    )
+    .unwrap()
 }
 
 struct Running {
@@ -279,6 +350,7 @@ fn sync(r: &Running, blocks: Vec<cloister_core::Block>) -> Response {
             blocks,
             blocklists: None,
             planning: None,
+            access_token: None,
         },
     )
     .unwrap()
@@ -390,7 +462,7 @@ fn blocklist_additions_apply_at_once_over_ipc_but_loosening_is_refused() {
 }
 
 #[test]
-fn a_synced_removal_never_takes_effect_before_tomorrow_here() {
+fn an_unauthenticated_removal_is_never_taken() {
     let dir = tempfile::tempdir().unwrap();
     let clock = FakeClock::at("2026-01-05T23:00:00Z");
     let r = start(&dir, &clock);
@@ -405,15 +477,36 @@ fn a_synced_removal_never_takes_effect_before_tomorrow_here() {
                 ..BlocklistEdits::default()
             }),
             planning: None,
+            access_token: None,
         },
     )
     .unwrap();
     assert!(matches!(answer, Response::Accepted { .. }), "{answer:?}");
+    assert!(blocks(&r, "reddit.com"));
+    clock.advance(Duration::minutes(60));
+    r.service.lock().unwrap().tick();
+    assert!(
+        blocks(&r, "reddit.com"),
+        "only the backend can remove an entry"
+    );
+    assert!(blocks(&r, "youtube.com"));
+}
+
+#[test]
+fn a_removal_fetched_from_the_backend_takes_effect_when_the_backend_says() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T23:00:00Z");
+    let r = start(&dir, &clock);
+    send(&r, start_block(120));
+    let account = FakeAccount::new("2026-01-05T23:00:00Z");
+    account.change(|f| f.state.blocklist_removals = vec![reddit_removal("2026-01-06T00:00:00Z")]);
+    link(&r, &dir, &account);
+    sync_with_token(&r, "token", Planning::default());
     assert!(blocks(&r, "reddit.com"), "still blocked until midnight");
     clock.advance(Duration::minutes(60));
     r.service.lock().unwrap().tick();
     assert!(!blocks(&r, "reddit.com"), "removed from the next day");
-    assert!(blocks(&r, "youtube.com"));
+    assert!(blocks(&r, "youtube.com"), "the local Block is kept");
 }
 
 #[test]
@@ -450,6 +543,7 @@ fn sync_planning(r: &Running, planning: Planning) -> Response {
             blocks: vec![],
             blocklists: None,
             planning: Some(planning),
+            access_token: None,
         },
     )
     .unwrap()
@@ -549,7 +643,7 @@ fn a_planned_deep_session_starts_on_time_with_only_the_service_running() {
 }
 
 #[test]
-fn a_synced_loosening_of_settings_waits_until_tomorrow() {
+fn an_unauthenticated_loosening_of_settings_is_never_taken() {
     let dir = tempfile::tempdir().unwrap();
     let clock = FakeClock::at("2026-01-05T17:30:00Z");
     let r = start(&dir, &clock);
@@ -572,9 +666,36 @@ fn a_synced_loosening_of_settings_waits_until_tomorrow() {
         },
     );
     assert!(blocks(&r, "github.com"), "tonight's lockdown stands");
-    // Tomorrow the later Shutdown Time applies.
+    // Nor tomorrow: only the backend can loosen settings.
     clock.advance(Duration::hours(24) + Duration::hours(2));
     r.service.lock().unwrap().tick();
+    assert!(blocks(&r, "github.com"));
+    let pending = PendingSettings {
+        workdays: later.workdays.clone(),
+        workday_start: later.workday_start.clone(),
+        shutdown_time: later.shutdown_time.clone(),
+        effective_at: utc("2026-01-06T00:00:00Z"),
+    };
+    sync_planning(
+        &r,
+        Planning {
+            settings: Some(weekdays_9_to_5()),
+            pending_settings: Some(pending.clone()),
+            ..Planning::default()
+        },
+    );
+    assert!(
+        blocks(&r, "github.com"),
+        "a forged pending change isn't taken either"
+    );
+    // From the backend it is.
+    let account = FakeAccount::new("2026-01-06T19:30:00Z");
+    account.change(|f| {
+        f.state.settings = Some(weekdays_9_to_5());
+        f.state.pending_settings = Some(pending);
+    });
+    link(&r, &dir, &account);
+    sync_with_token(&r, "token", Planning::default());
     assert!(!blocks(&r, "github.com"));
     // Tightening applies at once.
     let mut earlier = later;
@@ -735,7 +856,7 @@ fn the_ritual_falls_due_at_shutdown_time_and_raises_the_ritual_flag() {
 }
 
 #[test]
-fn a_completed_ritual_arrives_by_sync_and_lowers_the_flag_only_if_tomorrow_is_planned() {
+fn a_forged_ritual_completion_over_ipc_keeps_the_ritual_due() {
     let dir = tempfile::tempdir().unwrap();
     let clock = FakeClock::at("2026-01-05T17:20:00Z");
     let r = start_with_flag(&dir, &clock);
@@ -747,46 +868,147 @@ fn a_completed_ritual_arrives_by_sync_and_lowers_the_flag_only_if_tomorrow_is_pl
         &r,
         Planning {
             settings: Some(weekdays_9_to_5()),
-            rituals: vec![done.clone()],
-            ..Planning::default()
-        },
-    );
-    assert_eq!(
-        ritual_now(&r),
-        RitualScreen::Due,
-        "no plan for tomorrow here"
-    );
-    assert!(ritual_flag(&dir).exists());
-    sync_planning(
-        &r,
-        Planning {
-            settings: Some(weekdays_9_to_5()),
             day_plans: vec![tomorrow_planned()],
             rituals: vec![done],
             ..Planning::default()
         },
     );
-    assert_eq!(ritual_now(&r), RitualScreen::Completed);
-    assert!(!ritual_flag(&dir).exists());
+    assert_eq!(ritual_now(&r), RitualScreen::Due);
+    assert!(ritual_flag(&dir).exists());
 }
 
 #[test]
-fn a_synced_shutdown_delay_holds_lockdown_and_the_ritual_for_30_minutes() {
+fn a_completed_ritual_fetched_from_the_backend_lowers_the_flag() {
     let dir = tempfile::tempdir().unwrap();
-    let clock = FakeClock::at("2026-01-05T16:30:00Z");
+    let clock = FakeClock::at("2026-01-05T17:20:00Z");
     let r = start_with_flag(&dir, &clock);
     sync_planning(
         &r,
         Planning {
             settings: Some(weekdays_9_to_5()),
-            shutdown_delays: vec![ShutdownDelay {
-                date: "2026-01-05".parse().unwrap(),
-                used_at: utc("2026-01-05T16:20:00Z"),
-            }],
+            ..Planning::default()
+        },
+    );
+    assert_eq!(ritual_now(&r), RitualScreen::Due);
+    let account = FakeAccount::new("2026-01-05T17:20:00Z");
+    account.change(|f| {
+        f.state.settings = Some(weekdays_9_to_5());
+        f.state.day_plans = vec![tomorrow_planned()];
+        f.state.rituals = vec![Ritual {
+            date: "2026-01-05".parse().unwrap(),
+            completed_at: utc("2026-01-05T17:15:00Z"),
+        }];
+    });
+    link(&r, &dir, &account);
+    sync_with_token(&r, "token", Planning::default());
+    assert_eq!(ritual_now(&r), RitualScreen::Completed);
+    assert!(!ritual_flag(&dir).exists());
+    assert_eq!(account.tokens(), vec!["token".to_string()]);
+}
+
+#[test]
+fn only_the_first_account_seen_is_taken() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T17:20:00Z");
+    let r = start_with_flag(&dir, &clock);
+    let account = FakeAccount::new("2026-01-05T17:20:00Z");
+    account.change(|f| f.state.settings = Some(weekdays_9_to_5()));
+    link(&r, &dir, &account);
+    sync_with_token(&r, "token", Planning::default());
+    assert_eq!(ritual_now(&r), RitualScreen::Due);
+    // Another account has today's ritual completed: it is not this Device's account.
+    account.change(|f| {
+        f.state.day_plans = vec![tomorrow_planned()];
+        f.state.rituals = vec![Ritual {
+            date: "2026-01-05".parse().unwrap(),
+            completed_at: utc("2026-01-05T17:15:00Z"),
+        }];
+    });
+    sync_with_token(&r, "someone-else", Planning::default());
+    assert_eq!(ritual_now(&r), RitualScreen::Due);
+    // The pin survives a restart.
+    drop(r);
+    let r = start_with_flag(&dir, &clock);
+    link(&r, &dir, &account);
+    sync_with_token(&r, "someone-else", Planning::default());
+    assert_eq!(ritual_now(&r), RitualScreen::Due);
+    sync_with_token(&r, "token", Planning::default());
+    assert_eq!(ritual_now(&r), RitualScreen::Completed);
+}
+
+#[test]
+fn server_time_comes_only_from_the_backend() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T09:00:00Z");
+    let r = start(&dir, &clock);
+    send(&r, start_block(60));
+    let account = FakeAccount::new("2026-01-05T09:30:00Z");
+    link(&r, &dir, &account);
+    sync_with_token(&r, "token", Planning::default());
+    let Response::Status { server_time, .. } = ipc::send(&r.socket, &Request::Status).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(server_time, utc("2026-01-05T09:30:00Z"));
+    assert!(blocks_youtube(&r));
+}
+
+#[test]
+fn the_wall_clock_can_add_enforcement_but_never_lift_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T16:00:00Z");
+    let r = start(&dir, &clock);
+    sync_planning(
+        &r,
+        Planning {
+            settings: Some(weekdays_9_to_5()),
+            ..Planning::default()
+        },
+    );
+    send(&r, start_block(60));
+    // Set forward past the Block's end: the Block holds, and lockdown on the wall clock too.
+    clock.set_wall("2026-01-05T19:00:00Z");
+    r.service.lock().unwrap().tick();
+    assert!(blocks_youtube(&r));
+    assert!(blocks(&r, "github.com"));
+    // Set back: what the trusted time says still holds.
+    clock.advance(Duration::hours(2));
+    clock.set_wall("2026-01-05T10:00:00Z");
+    r.service.lock().unwrap().tick();
+    assert!(
+        blocks(&r, "github.com"),
+        "Evening Lockdown at 18:00 trusted time"
+    );
+}
+
+#[test]
+fn a_shutdown_delay_from_the_backend_holds_lockdown_and_the_ritual_for_30_minutes() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T16:30:00Z");
+    let r = start_with_flag(&dir, &clock);
+    let delay = ShutdownDelay {
+        date: "2026-01-05".parse().unwrap(),
+        used_at: utc("2026-01-05T16:20:00Z"),
+    };
+    // Over the socket alone it isn't taken.
+    sync_planning(
+        &r,
+        Planning {
+            settings: Some(weekdays_9_to_5()),
+            shutdown_delays: vec![delay.clone()],
             ..Planning::default()
         },
     );
     clock.advance(Duration::minutes(45));
+    r.service.lock().unwrap().tick();
+    assert_eq!(ritual_now(&r), RitualScreen::Due);
+    let account = FakeAccount::new("2026-01-05T17:15:00Z");
+    account.change(|f| {
+        f.state.settings = Some(weekdays_9_to_5());
+        f.state.shutdown_delays = vec![delay];
+    });
+    link(&r, &dir, &account);
+    sync_with_token(&r, "token", Planning::default());
     r.service.lock().unwrap().tick();
     assert_eq!(ritual_now(&r), RitualScreen::Delayed);
     assert!(!blocks(&r, "github.com"));

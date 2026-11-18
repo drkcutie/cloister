@@ -358,6 +358,7 @@ fn settle_settings(enforcer: &Enforcer) {
         &ipc::Request::Sync {
             blocks: vec![],
             blocklists: None,
+            access_token: None,
             planning: Some(ipc::Planning {
                 settings: Some(cloister_core::Settings {
                     workdays: vec![1, 2, 3, 4, 5],

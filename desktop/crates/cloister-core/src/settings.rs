@@ -318,6 +318,59 @@ impl State {
         };
     }
 
+    /// Fold in settings from a sender that may not be trusted, at `now`: only their stricter
+    /// part applies, at once. Nothing is scheduled to loosen (pending settings here stay as
+    /// they are, and incoming ones only say which settings the sender has in force now). The
+    /// time zone and the settings themselves are taken only while this state has none.
+    pub fn tighten_settings(
+        &mut self,
+        time_zone: &str,
+        settings: Option<&Settings>,
+        pending: Option<&PendingSettings>,
+        now: DateTime<Utc>,
+    ) {
+        let incoming = State {
+            time_zone: time_zone.to_string(),
+            settings: settings.cloned(),
+            pending_settings: pending.cloned(),
+            ..State::default()
+        };
+        let Some(incoming_now) = settings_at(&incoming, now) else {
+            return;
+        };
+        if checked(
+            &incoming_now.workdays,
+            &incoming_now.workday_start,
+            &incoming_now.shutdown_time,
+        )
+        .is_err()
+        {
+            return;
+        }
+        let Some(base) = settings_at(self, now) else {
+            if self.settings.is_none() && self.pending_settings.is_none() {
+                if time_zone.parse::<Tz>().is_ok() {
+                    self.time_zone = time_zone.to_string();
+                }
+                self.settings = Some(incoming_now);
+            }
+            return;
+        };
+        let in_force = base.tightest(&incoming_now);
+        if in_force == base {
+            return;
+        }
+        self.record_settings_change(&in_force, now);
+        if self
+            .pending_settings
+            .as_ref()
+            .is_some_and(|p| p.effective_at <= now)
+        {
+            self.pending_settings = None;
+        }
+        self.settings = Some(in_force);
+    }
+
     /// Fold in settings from the backend at `now` so that nothing loosens sooner than tomorrow
     /// from here. The time zone is taken only with the first settings.
     pub fn merge_settings(

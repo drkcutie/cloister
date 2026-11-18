@@ -11,7 +11,6 @@ use cloister_app_model::{
     SocketEnforcer, Today, View,
 };
 use cloister_core::EntryKind;
-use cloister_enforcer::ipc::{Planning, Request};
 use cloister_sync::{Device, DeviceSummary, SyncHandle, SyncOptions, SyncStatus};
 use gpui_kit::*;
 
@@ -168,14 +167,10 @@ impl Cloister {
     /// and tell the account whether this Device is enforcing.
     fn hand_off_to_service(&mut self) {
         let Some(device) = &self.account else { return };
-        let Ok(state) = device.state() else { return };
-        let reached = SocketEnforcer::from_env()
-            .send(&Request::Sync {
-                blocks: state.blocks.clone(),
-                blocklists: Some(state.blocklist_edits()),
-                planning: Some(Planning::of(&state)),
-            })
-            .is_ok();
+        let Ok(request) = device.enforcer_sync() else {
+            return;
+        };
+        let reached = SocketEnforcer::from_env().send(&request).is_ok();
         let device = device.clone();
         // A network call: off the main thread.
         std::thread::spawn(move || {

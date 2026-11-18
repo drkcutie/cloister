@@ -3,7 +3,7 @@
 //!
 //! ```text
 //! cloisterd run [--state PATH] [--socket PATH] [--dns ADDR] [--upstream ADDR] [--tick SECS]
-//!               [--ritual-flag PATH] [--app PATH] [--dry-run]
+//!               [--ritual-flag PATH] [--app PATH] [--backend URL --anon-key KEY] [--dry-run]
 //! cloisterd service [run options]    # Windows: the same, under the Service Control Manager
 //! cloisterd install --app PATH       # as root/Administrator: copy itself into place, register
 //!                                    # the service and the ritual window, start it
@@ -15,6 +15,12 @@
 //! `/var/run/cloister-ritual-due` on macOS, `/run/cloister-ritual-due` on Linux; in a dry run
 //! only with `--ritual-flag`), which keeps the ritual window's launch agent (macOS) or user unit
 //! (Linux) alive. On Windows the service starts the window (`--app`) in the user's session.
+//!
+//! The service keeps its trusted clock (`clock.json`) and the account it is pinned to
+//! (`account.json`) next to the state file. It fetches the account from the backend itself
+//! (whatever lifts enforcement, and server time, only come that way): `--backend`/`--anon-key`,
+//! else `CLOISTER_API_URL`/`CLOISTER_ANON_KEY`, else `backend.json` (`{"url": .., "anon_key": ..}`)
+//! next to the state file, else the values built in (the same variables at build time).
 //!
 //! `--dry-run` logs each Enforcement instead of touching the system, so the service, its
 //! DNS filter (on a high `--dns` port) and IPC can be run without root. Without `--dry-run`
@@ -29,6 +35,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cloister_core::Enforcement;
+use cloister_enforcer::account::{AccountLink, Backend};
 use cloister_enforcer::clock::TrustedClock;
 use cloister_enforcer::dns::DnsFilter;
 use cloister_enforcer::service::shared_domains;
@@ -53,6 +60,7 @@ struct Options {
     ritual_flag: Option<PathBuf>,
     /// The desktop app, which shows the Shutdown Ritual (`--ritual`). Used on Windows.
     app: Option<String>,
+    backend: Option<(String, String)>,
     dry_run: bool,
 }
 
@@ -85,8 +93,11 @@ fn parse_run(args: &[String]) -> Result<Options, String> {
         tick: Duration::from_secs(5),
         ritual_flag: None,
         app: None,
+        backend: None,
         dry_run: false,
     };
+    let mut url = None;
+    let mut key = None;
     let mut it = args.iter();
     while let Some(flag) = it.next() {
         let mut value = || it.next().cloned().ok_or(format!("{flag} needs a value"));
@@ -102,10 +113,17 @@ fn parse_run(args: &[String]) -> Result<Options, String> {
             }
             "--ritual-flag" => o.ritual_flag = Some(value()?.into()),
             "--app" => o.app = Some(value()?),
+            "--backend" => url = Some(value()?),
+            "--anon-key" => key = Some(value()?),
             "--dry-run" => o.dry_run = true,
             other => return Err(format!("unknown option {other}")),
         }
     }
+    o.backend = match (url, key) {
+        (Some(u), Some(k)) => Some((u, k)),
+        (None, None) => backend_config(&o.state),
+        _ => return Err("--backend and --anon-key go together".into()),
+    };
     if o.upstreams.is_empty() {
         o.upstreams = vec!["1.1.1.1:53".parse().unwrap(), "9.9.9.9:53".parse().unwrap()];
     }
@@ -131,10 +149,19 @@ fn run(o: Options, stop: &AtomicBool) -> Result<(), String> {
     let mut service = Service::open(
         StateStore::new(&o.state),
         platform,
-        TrustedClock::start(),
+        TrustedClock::open(o.state.with_file_name("clock.json")),
         domains.clone(),
     )
     .map_err(|e| format!("loading {}: {e}", o.state.display()))?;
+    match &o.backend {
+        Some((url, key)) => service.set_account(AccountLink::new(
+            Box::new(Backend::new(url, key)?),
+            Some(o.state.with_file_name("account.json")),
+        )),
+        None => eprintln!(
+            "cloisterd: no backend configured: rituals, Shutdown Delays and loosening changes won't reach this Device"
+        ),
+    }
     service.set_ritual_flag(
         o.ritual_flag
             .clone()
@@ -160,6 +187,32 @@ fn run(o: Options, stop: &AtomicBool) -> Result<(), String> {
         };
     }
     Ok(())
+}
+
+/// The backend from the environment, `backend.json` next to the state, or the build.
+fn backend_config(state: &std::path::Path) -> Option<(String, String)> {
+    let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    if let (Some(u), Some(k)) = (env("CLOISTER_API_URL"), env("CLOISTER_ANON_KEY")) {
+        return Some((u, k));
+    }
+    #[derive(serde::Deserialize)]
+    struct File {
+        url: String,
+        anon_key: String,
+    }
+    if let Some(f) = std::fs::read(state.with_file_name("backend.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<File>(&b).ok())
+    {
+        return Some((f.url, f.anon_key));
+    }
+    match (
+        option_env!("CLOISTER_API_URL"),
+        option_env!("CLOISTER_ANON_KEY"),
+    ) {
+        (Some(u), Some(k)) if !u.is_empty() && !k.is_empty() => Some((u.into(), k.into())),
+        _ => None,
+    }
 }
 
 /// `cloisterd install --app PATH`: as root / Administrator, install this binary as the service.

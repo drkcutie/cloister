@@ -1,8 +1,9 @@
 //! Local IPC: one JSON request per line over a Unix socket (AF_UNIX on Windows too), one JSON
 //! response per line back.
 //!
-//! The socket is world-writable on purpose: the service only accepts commands and syncs that
-//! tighten enforcement, so any local user may start a Block but nobody can end one.
+//! Any local user may connect: the service only accepts commands and syncs that tighten
+//! enforcement, so anyone may start a Block but nobody can end one. Whatever lifts enforcement
+//! is fetched by the service from the backend (see [`crate::account`]).
 
 use std::io::{self, BufRead, BufReader, Write};
 #[cfg(unix)]
@@ -44,6 +45,11 @@ pub enum Request {
         /// [`cloister_core::State::merge_day_plan`]).
         #[serde(default)]
         planning: Option<Planning>,
+        /// The signed-in Device's access token. With it the service fetches the account from
+        /// the backend itself, which is the only way anything that lifts enforcement (a
+        /// completed ritual, a Shutdown Delay, a loosening that is due) reaches it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        access_token: Option<String>,
     },
     Status,
 }

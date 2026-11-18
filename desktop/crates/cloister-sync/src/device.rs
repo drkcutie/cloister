@@ -464,6 +464,27 @@ impl Device {
         serde_json::from_value(v).map_err(|e| Error::Protocol(e.to_string()))
     }
 
+    /// The signed-in session's access token as it is now (no network: the sync loop keeps
+    /// it fresh). The enforcement service fetches the account with it.
+    pub fn access_token(&self) -> Option<String> {
+        lock(&self.inner.session)
+            .as_ref()
+            .map(|s| s.access_token.clone())
+    }
+
+    /// The request that hands this Device's view of the account to the enforcement service:
+    /// Blocks, Blocklist edits and planning (taken only where they tighten), and the access
+    /// token, with which the service fetches from the backend whatever lifts enforcement.
+    pub fn enforcer_sync(&self) -> Result<cloister_enforcer::ipc::Request> {
+        let state = self.state()?;
+        Ok(cloister_enforcer::ipc::Request::Sync {
+            blocks: state.blocks.clone(),
+            blocklists: Some(state.blocklist_edits()),
+            planning: Some(cloister_enforcer::ipc::Planning::of(&state)),
+            access_token: self.access_token(),
+        })
+    }
+
     /// The current session, refreshed first when it is about to expire.
     fn session(&self) -> Result<Session> {
         let mut guard = lock(&self.inner.session);

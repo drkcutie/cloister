@@ -18,7 +18,7 @@ use cloister_app_model::{
     PlanBackend, RitualFlow, RitualStep, SocketEnforcer, Zone,
 };
 use cloister_core::RitualScreen;
-use cloister_enforcer::ipc::{Planning, Request, Response};
+use cloister_enforcer::ipc::{Request, Response};
 use cloister_sync::{Device, SyncHandle, SyncOptions};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -762,12 +762,8 @@ fn button(p: &Palette, id: &'static str, text: &'static str, primary: bool) -> S
 /// Push the account's state to cloisterd now (completion lifts the ritual there).
 fn hand_off(device: &Device) {
     let _ = device.pull();
-    if let Ok(state) = device.state() {
-        let _ = SocketEnforcer::from_env().send(&Request::Sync {
-            blocks: state.blocks.clone(),
-            blocklists: Some(state.blocklist_edits()),
-            planning: Some(Planning::of(&state)),
-        });
+    if let Ok(request) = device.enforcer_sync() {
+        let _ = SocketEnforcer::from_env().send(&request);
     }
 }
 

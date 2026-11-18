@@ -21,7 +21,7 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
 
 use cloister_core::Command;
-use cloister_enforcer::ipc::{self, Planning, Request, Response};
+use cloister_enforcer::ipc::{self, Response};
 use cloister_sync::{
     Backend, CommandOutcome, Device, DeviceInfo, LoopbackRedirect, Pkce, Platform, SyncEvent,
     SyncOptions,
@@ -226,20 +226,12 @@ fn sync(device: &Device, enforcer: Option<&std::path::Path>) -> Result<(), Strin
             Ok(SyncEvent::StateChanged) | Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
         }
-        let state = device.state().map_err(|e| e.to_string())?;
         // The service holds the planning too, so it starts planned Deep Sessions and Evening
         // Lockdown on its own clock even when this process isn't running.
-        let blocks = state.blocks.clone();
+        let request = device.enforcer_sync().map_err(|e| e.to_string())?;
         let mut enforcing = true;
         if let Some(socket) = enforcer {
-            match ipc::send(
-                socket,
-                &Request::Sync {
-                    blocks,
-                    blocklists: Some(state.blocklist_edits()),
-                    planning: Some(Planning::of(&state)),
-                },
-            ) {
+            match ipc::send(socket, &request) {
                 Ok(Response::Accepted { .. }) => {}
                 Ok(other) => eprintln!("enforcement service: {other:?}"),
                 Err(e) => {

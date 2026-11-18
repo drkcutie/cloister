@@ -281,6 +281,14 @@ impl State {
         }
     }
 
+    /// Fold in the additions of `incoming` only (from a sender that may not be trusted):
+    /// adding an entry only tightens. Removals and opt-outs here stay as they are.
+    pub fn merge_blocklist_entries(&mut self, incoming: &BlocklistEdits) {
+        let mut entries: BTreeSet<BlocklistEntry> = self.blocklist_entries.drain(..).collect();
+        entries.extend(incoming.entries.iter().cloned());
+        self.blocklist_entries = entries.into_iter().collect();
+    }
+
     /// Fold in Blocklist edits from the backend at `now` so that nothing loosens sooner than
     /// tomorrow from here: every addition is kept, a removal or opt-out the backend no longer
     /// has is dropped (that tightens), a known one keeps its date, and a new one takes

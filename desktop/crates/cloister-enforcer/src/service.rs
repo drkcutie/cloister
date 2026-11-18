@@ -12,6 +12,7 @@ use cloister_core::{
     MAX_BLOCK, QUIT_SOCIAL_BLOCK,
 };
 
+use crate::account::{AccountLink, Fetched};
 use crate::dns::SharedDomains;
 use crate::domains::DomainSet;
 use crate::ipc::{Planning, Request, Response};
@@ -31,7 +32,17 @@ impl<P: Platform + ?Sized> Platform for Box<P> {
 
 /// The service's source of "server time".
 pub trait Clock: Send {
+    /// The trusted time: what commands are decided at.
     fn now(&self) -> DateTime<Utc>;
+    /// The wall clock, if it may be ahead of [`Clock::now`] (after the Device was off). The
+    /// service enforces what is due at either time, so it is only ever stricter.
+    fn wall_hint(&self) -> Option<DateTime<Utc>> {
+        None
+    }
+    /// Server time from the backend (authenticated): re-anchor on it.
+    fn set_server_time(&mut self, _server_time: DateTime<Utc>) {}
+    /// Called on every tick, so the clock can save its progress.
+    fn checkpoint(&mut self) {}
 }
 
 /// Rejection code for commands the service never accepts over IPC.
@@ -48,6 +59,7 @@ pub struct Service<P, C> {
     clock: C,
     domains: SharedDomains,
     ritual_flag: Option<PathBuf>,
+    account: Option<AccountLink>,
 }
 
 impl<P: Platform, C: Clock> Service<P, C> {
@@ -66,6 +78,7 @@ impl<P: Platform, C: Clock> Service<P, C> {
             clock,
             domains,
             ritual_flag: None,
+            account: None,
         };
         service.tick();
         Ok(service)
@@ -78,12 +91,30 @@ impl<P: Platform, C: Clock> Service<P, C> {
         self.ritual_flag = path;
     }
 
+    /// Fetch the account from the backend when a Device hands over its access token. Without
+    /// it, nothing that lifts enforcement is ever taken.
+    pub fn set_account(&mut self, account: AccountLink) {
+        self.account = Some(account);
+    }
+
+    /// The Enforcement due now: at the trusted time and, when the wall clock is later, at
+    /// that time too (the union, so it is only ever stricter).
+    fn current_enforcement(&self) -> Enforcement {
+        let now = self.clock.now();
+        let at_now = enforcement(&self.state, now);
+        match self.clock.wall_hint() {
+            Some(wall) if wall > now => union(at_now, enforcement(&self.state, wall)),
+            _ => at_now,
+        }
+    }
+
     /// Re-apply the Enforcement for now, computed by the rules engine from the service's own
     /// persisted state (Blocks, Blocklist edits, settings, Day Plans and Schedules), so
     /// Evening Lockdown and planned Deep Sessions hold with no app or Device sync running.
     /// Returns it.
     pub fn tick(&mut self) -> Enforcement {
-        let current = enforcement(&self.state, self.clock.now());
+        self.clock.checkpoint();
+        let current = self.current_enforcement();
         let set = DomainSet::new(&current.blocked_domains);
         match self.domains.write() {
             Ok(mut guard) => *guard = set,
@@ -107,7 +138,7 @@ impl<P: Platform, C: Clock> Service<P, C> {
                 Response::Status {
                     server_time: now,
                     blocks: self.state.blocks.clone(),
-                    enforcement: enforcement(&self.state, now),
+                    enforcement: self.current_enforcement(),
                     blocklists: self.state.blocklist_edits(),
                     lockdown: lockdown(&self.state, now),
                     next_workday_start: next_workday_start(&self.state, now),
@@ -121,27 +152,43 @@ impl<P: Platform, C: Clock> Service<P, C> {
                 blocks,
                 blocklists,
                 planning,
-            } => self.sync(blocks, blocklists, planning),
+                access_token,
+            } => self.sync(blocks, blocklists, planning, access_token),
         }
     }
 
-    /// Fold in Blocks from the backend. Only tightens (see [`merge_blocks`]).
+    /// Fold in what a Device knows of the account. Unauthenticated, so it only tightens (see
+    /// [`merge_blocks`] and [`merge_planning`]). With an access token, the service then fetches
+    /// the account from the backend itself and takes it as the backend has it.
     fn sync(
         &mut self,
         blocks: Vec<Block>,
         blocklists: Option<BlocklistEdits>,
         planning: Option<Planning>,
+        access_token: Option<String>,
     ) -> Response {
         let Some(mut merged) = merge_blocks(&self.state, &blocks) else {
             return Response::Rejected {
                 reason: INVALID_BLOCK.into(),
             };
         };
-        if let Some(edits) = blocklists {
-            merged.merge_blocklist_edits(&edits, self.clock.now());
+        let news = blocklists
+            .as_ref()
+            .is_some_and(|b| *b != self.state.blocklist_edits())
+            || planning
+                .as_ref()
+                .is_some_and(|p| *p != Planning::of(&self.state));
+        if let Some(edits) = &blocklists {
+            merged.merge_blocklist_entries(edits);
         }
         if let Some(planning) = planning {
             merge_planning(&mut merged, &planning, self.clock.now());
+        }
+        if let (Some(token), Some(account)) = (access_token, self.account.as_mut()) {
+            if let Some(fetched) = account.fetch(&token, news) {
+                self.clock.set_server_time(fetched.server_time);
+                merged = adopt_account(&merged, fetched);
+            }
         }
         if merged != self.state {
             if let Err(e) = self.store.save(&merged) {
@@ -246,20 +293,21 @@ pub fn merge_blocks(state: &State, incoming: &[Block]) -> Option<State> {
     Some(next)
 }
 
-/// Fold the account's planning into `state` at `now` without loosening anything before
-/// tomorrow: settings tighten now and loosen from the next day boundary, a Schedule change goes
-/// through the rules engine (a running day keeps its plan), and a Day Plan is taken only if it
-/// keeps every started Deep Session and doesn't reduce the deep time still to come.
+/// Fold planning from an unauthenticated sender into `state` at `now`, so that it only
+/// tightens: the stricter part of the settings applies (no loosening is scheduled), a new
+/// Schedule is added through the rules engine (a known one isn't changed), and a Day Plan is
+/// taken only if it keeps every started Deep Session and doesn't reduce the deep time still to
+/// come. Shutdown Delays, completed rituals and the settings history are only taken from the
+/// backend (see [`adopt_account`]).
 pub fn merge_planning(state: &mut State, planning: &Planning, now: DateTime<Utc>) {
-    state.merge_settings_since(planning.settings_since);
-    state.merge_settings(
+    state.tighten_settings(
         &planning.time_zone,
         planning.settings.as_ref(),
         planning.pending_settings.as_ref(),
         now,
     );
     for schedule in &planning.schedules {
-        if state.schedules.contains(schedule) {
+        if state.schedules.iter().any(|s| s.id == schedule.id) {
             continue;
         }
         let command = Command::PutSchedule {
@@ -278,7 +326,48 @@ pub fn merge_planning(state: &mut State, planning: &Planning, now: DateTime<Utc>
     for plan in &planning.day_plans {
         state.merge_day_plan(plan, now);
     }
-    state.merge_ritual_records(&planning.shutdown_delays, &planning.rituals, now);
+}
+
+/// `local` with the account as the backend has it (authenticated, and authoritative): its
+/// settings, history, Day Plans, Schedules, Blocklist edits and ritual records are taken as
+/// they are; Blocks, Blocklist additions and Breaches only known here are kept.
+pub fn adopt_account(local: &State, fetched: Fetched) -> State {
+    let mut next = fetched.state;
+    next.blocks = merge_blocks(local, &fetched.blocks)
+        .unwrap_or_else(|| local.clone())
+        .blocks;
+    next.merge_blocklist_entries(&local.blocklist_edits());
+    for breach in &local.breaches {
+        if !next.breaches.iter().any(|b| b.id == breach.id) {
+            next.breaches.push(breach.clone());
+        }
+    }
+    next.breaches
+        .sort_by(|a, b| (a.occurred_at, &a.id).cmp(&(b.occurred_at, &b.id)));
+    next
+}
+
+/// Two Enforcements at once: everything either blocks, and the ritual screen that asks more
+/// (due before the others).
+fn union(a: Enforcement, b: Enforcement) -> Enforcement {
+    let mut domains: Vec<String> = a.blocked_domains;
+    domains.extend(b.blocked_domains);
+    domains.sort();
+    domains.dedup();
+    let mut apps: Vec<String> = a.blocked_apps;
+    apps.extend(b.blocked_apps);
+    apps.sort();
+    apps.dedup();
+    let ritual = if b.ritual == RitualScreen::Due {
+        b.ritual
+    } else {
+        a.ritual
+    };
+    Enforcement {
+        blocked_domains: domains,
+        blocked_apps: apps,
+        ritual,
+    }
 }
 
 /// Create (with the ritual's state) or remove the ritual flag file. Idempotent.
