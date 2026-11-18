@@ -40,8 +40,8 @@ pub use ritual::{
     SHUTDOWN_COMPLETE, SHUTDOWN_DELAY,
 };
 pub use settings::{
-    lockdown, next_workday_start, settings_at, workday, Lockdown, PendingSettings, Settings,
-    Workday,
+    lockdown, next_workday_start, settings_at, workday, Lockdown, PastSettings, PendingSettings,
+    Settings, Workday,
 };
 
 /// Everything the engine knows. Grows as later rules arrive (Day Plans, settings, rituals...).
@@ -81,6 +81,10 @@ pub struct State {
     /// Requested settings that loosen something, waiting for the next day boundary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_settings: Option<PendingSettings>,
+    /// Settings that were in force before, each until a change replaced them, sorted. Days
+    /// that have begun keep the Workday they were under them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub past_settings: Vec<PastSettings>,
     /// When the first settings were made. A ritual due before then doesn't exist, so a new
     /// account has no Missed Ritual. Omitted when unknown (then every Workday counts).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -115,6 +119,7 @@ impl Default for State {
             breaches: Vec::new(),
             settings: None,
             pending_settings: None,
+            past_settings: Vec::new(),
             settings_since: None,
             weekly_target: None,
             pending_weekly_target: None,

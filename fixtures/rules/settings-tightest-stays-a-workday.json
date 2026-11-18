@@ -1,0 +1,40 @@
+{
+  "name": "settings-tightest-stays-a-workday",
+  "description": "When the stricter part of a settings change would put Workday Start at or after Shutdown Time, the times in force stay as they were and the whole request waits for tomorrow, so every Workday keeps a Shutdown Ritual that lapses at the next Workday Start.",
+  "initial_state": {
+    "blocks": [],
+    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" }
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "change_settings", "workdays": [1, 2, 3, 4], "workday_start": "18:00", "shutdown_time": "22:00" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "settings": { "workdays": [1, 2, 3, 4], "workday_start": "09:00", "shutdown_time": "17:00" },
+          "past_settings": [
+            { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00", "until": "2026-01-05T10:00:00Z" }
+          ],
+          "pending_settings": { "workdays": [1, 2, 3, 4], "workday_start": "18:00", "shutdown_time": "22:00", "effective_at": "2026-01-06T00:00:00Z" }
+        },
+        "enforcement": { "blocked_domains": [] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T17:05:00Z",
+      "command": { "type": "capture_loose_end", "loose_end_id": "l1", "text": "Send the invoice" },
+      "expect": { "outcome": "accepted", "enforcement": { "ritual": "due" } }
+    },
+    {
+      "server_time": "2026-01-05T17:06:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete" },
+      "expect": { "outcome": "rejected", "reason": "day_plan_required" }
+    },
+    {
+      "server_time": "2026-01-06T12:00:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["github.com"], "ritual": "due" } }
+    }
+  ]
+}

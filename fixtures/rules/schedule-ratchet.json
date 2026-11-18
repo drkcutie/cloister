@@ -1,6 +1,6 @@
 {
   "name": "schedule-ratchet",
-  "description": "Once a day running on its Schedule has begun, the Schedule's plan is that day's floor: started Deep Sessions stay and Planned Deep Minutes can't go down.",
+  "description": "From the start of its local day, a day running on its Schedule has the Schedule's plan as its floor: deep Slots can move before they start, but Planned Deep Minutes can't go down and started Deep Sessions stay.",
   "initial_state": {
     "blocks": [],
     "schedules": [
@@ -45,7 +45,7 @@
           {
             "id": "m1",
             "starts_at": "2026-01-05T13:00:00Z",
-            "ends_at": "2026-01-05T14:00:00Z",
+            "ends_at": "2026-01-05T16:00:00Z",
             "label": "Write",
             "deep": true
           }
@@ -60,12 +60,12 @@
               "date": "2026-01-05",
               "starts_at": "2026-01-05T08:00:00Z",
               "ends_at": "2026-01-05T17:00:00Z",
-              "planned_deep_minutes": 60,
+              "planned_deep_minutes": 180,
               "slots": [
                 {
                   "id": "m1",
                   "starts_at": "2026-01-05T13:00:00Z",
-                  "ends_at": "2026-01-05T14:00:00Z",
+                  "ends_at": "2026-01-05T16:00:00Z",
                   "label": "Write",
                   "deep": true
                 }
@@ -122,7 +122,8 @@
         ]
       },
       "expect": {
-        "outcome": "accepted"
+        "outcome": "rejected",
+        "reason": "slot_cannot_be_removed"
       }
     },
     {
@@ -229,7 +230,8 @@
         ]
       },
       "expect": {
-        "outcome": "accepted"
+        "outcome": "rejected",
+        "reason": "slot_cannot_be_removed"
       }
     }
   ]

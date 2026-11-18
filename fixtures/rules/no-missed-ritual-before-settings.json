@@ -32,6 +32,9 @@
         "outcome": "accepted",
         "state": {
           "blocks": [],
+          "past_settings": [
+            { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00", "until": "2026-01-08T10:00:00Z" }
+          ],
           "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "16:00" },
           "settings_since": "2026-01-07T18:00:00Z"
         }

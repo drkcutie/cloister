@@ -161,6 +161,14 @@ Breaches are listed as `"breaches": [{ "id": "phone-1", "kind": "vpn_turned_off"
 records it with the first settings and never changes it. A ritual due before it doesn't exist (see **Shutdown Ritual**).
 Without it, every Workday counts.
 
+`"past_settings": [{ "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00", "until": "..." }]`
+(omitted when empty) is the settings history, sorted by `until`: each entry was in force from the previous entry's `until`
+(or always, for the first) until its own. `change_settings` appends to it when it replaces the settings in force: first,
+if pending settings had taken effect and differ from the stored `settings`, the stored ones until the pending
+`effective_at`; then, if the new settings differ from the ones in force, those until server time (an entry is not added
+when the last one already ends at or after that time). The settings in force at a time `t` are the first history entry
+with `until > t`, else as below.
+
 `workdays` are ISO weekdays, sorted; times are local `HH:MM` in the state's `time_zone`. `settings` are the ones
 in force as of the last `change_settings`; `pending_settings`, once `effective_at` has passed, replace them (an
 engine computes this from the time; nothing rewrites the state until the next `change_settings`).
@@ -202,7 +210,7 @@ Entries and removals are sorted by `(blocklist, kind, entry)` in byte order (`ap
 | `cancel_block` | `block_id` | Always rejected: a Block can't be cancelled. |
 | `record_depth_rating` | `block_id`, `rating` | Records a Deep Session's Depth Rating (1 to 5), once, at or after its end. `block_id` may be a deep Slot's id. |
 | `write_day_plan` | `date`, `starts_at`, `ends_at`, `slots` (each `id`, `starts_at`, `ends_at`, `label`, `deep` (default `false`)) | Saves the Day Plan for `date`, replacing a saved one. Depth Ratings of unchanged Slots are kept. |
-| `put_schedule` | `schedule_id`, `time_zone`, `weekdays`, `starts`, `ends`, `slots` (each `starts`, `ends`, `label`, `deep` (default `false`)) | Creates or replaces a Schedule. If a day is running on the old Schedule (its start passed, its end not, no saved plan), that day's plan is first saved as its Day Plan, so the change applies from the next day. |
+| `put_schedule` | `schedule_id`, `time_zone`, `weekdays`, `starts`, `ends`, `slots` (each `starts`, `ends`, `label`, `deep` (default `false`)) | Creates or replaces a Schedule. If today (in the old Schedule's time zone) runs on the old Schedule with no saved plan and its plan hasn't ended, that plan is first saved as today's Day Plan when it has started, or when the new Schedule would give today fewer Planned Deep Minutes (none if it no longer covers today). So a change never cuts today's deep time; it applies from the next day. |
 | `add_blocklist_entry` | `blocklist`, `kind` (`domain` or `app`), `entry` | Adds to a Blocklist. Applies immediately, also to running Blocks. Cancels a removal of the same entry. Adding an entry already listed changes nothing. |
 | `remove_blocklist_entry` | `blocklist`, `kind`, `entry` | Stores a removal that takes effect at the next day boundary. Removing an entry whose removal is pending changes nothing (the date stays). |
 | `opt_out_of_blocklist` | `blocklist` | Distraction List categories only. From the next day boundary, new Blocks leave the category out. A running Block keeps it. |
@@ -231,7 +239,8 @@ deep Block started at the Slot's start: the categories not opted out then (and, 
 **Settings and Evening Lockdown.** `change_settings` first works out the settings in force now (the pending ones
 if their `effective_at` has passed). Without any, the requested settings apply at once. Otherwise the new
 `settings` are the stricter of the two field by field: Workdays in both, the later Workday Start, the earlier
-Shutdown Time (this may leave a Workday with no working time; that is allowed). If that differs from the
+Shutdown Time; but if that Workday Start is not before that Shutdown Time, the times in force are kept (only the
+Workdays tighten now), so every Workday keeps working time and a ritual that lapses. If that differs from the
 request, the request becomes `pending_settings` from the next day boundary (replacing any earlier pending ones);
 otherwise there are no pending settings. `time_zone` is taken only while no settings exist; after that a
 different one is `time_zone_cannot_change`.
@@ -242,9 +251,14 @@ kind `work` and every Distraction List category in force are enforced (as if a B
 `start_block` with `deep: true` is rejected (`rest_day` or `evening_lockdown`; checked after `duplicate_block`).
 A plain Block still starts. Deep Slots and running Blocks are untouched.
 
+**Which settings a date uses** (its Workday and bounds, for `write_day_plan`, the ritual and the next Workday Start):
+a date whose local midnight is after server time uses the settings in force at that midnight. A date that has begun
+uses the settings in force at its local midnight (from `past_settings`), except that today uses the settings in force
+now when they keep it a Workday. So removing a Workday makes today a Rest Day for Evening Lockdown at once, but today's
+ritual and past Missed Rituals stay.
+
 With settings, `write_day_plan` for a Rest Day is `rest_day`, and its `starts_at`/`ends_at` must equal that
-date's Workday Start and Shutdown Time (else `invalid_day_plan`), using the settings in force at the later of
-server time and the date's local midnight. These checks come before the other Day Plan checks.
+date's Workday Start and Shutdown Time (else `invalid_day_plan`), using the settings that date uses (above). These checks come before the other Day Plan checks.
 
 **Shutdown Ritual.** Every Workday (under the settings, as `write_day_plan` sees them) has a ritual, due at its
 Shutdown Time, or 30 minutes later if a Shutdown Delay was used for that date. The ritual in question at time `t` is
@@ -287,7 +301,7 @@ next **week boundary** (the first local Monday midnight after server time, in `t
 pending one; otherwise there is none.
 
 **The ratchet** (`write_day_plan`). The plan in force for the date is the saved one, or the
-Schedule's once its `starts_at` has passed (before that the Schedule is only a draft). Against
+Schedule's once the date has begun in the Schedule's time zone (local midnight; before that the Schedule is only a draft). Against
 it, checked in this order after the shape checks: every deep Slot that has started must appear
 unchanged (`deep_session_has_started`); a deep Slot starting before server time must be an
 unchanged deep Slot (`slot_in_the_past`); Planned Deep Minutes must not go down

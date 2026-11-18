@@ -200,11 +200,22 @@ pub(crate) fn parse_hhmm(s: &str) -> Option<NaiveTime> {
 }
 
 /// The plan in force for `date` at `now`: the saved one, or the Schedule's once its day has
-/// begun (before that, the Schedule is only a draft).
+/// begun in the Schedule's time zone (before that, the Schedule is only a draft). From local
+/// midnight on, the day's deep time can only grow (ADR 0001).
 fn plan_in_force(state: &State, date: NaiveDate, now: DateTime<Utc>) -> Option<DayPlan> {
     match saved_plan(state, date) {
         Some(plan) => Some(plan.clone()),
-        None => schedule_plan(state, date).filter(|p| p.starts_at <= now),
+        None => {
+            let weekday = date.weekday().number_from_monday() as u8;
+            let schedule = state
+                .schedules
+                .iter()
+                .find(|s| s.weekdays.contains(&weekday))?;
+            let tz: Tz = schedule.time_zone.parse().ok()?;
+            (now.with_timezone(&tz).date_naive() >= date)
+                .then(|| schedule_plan_of(schedule, date))
+                .flatten()
+        }
     }
 }
 
@@ -387,22 +398,6 @@ pub(crate) fn put_schedule(
     {
         return Err(Reason::SchedulesOverlap);
     }
-    // A change to a Schedule takes effect from its next day: a day already running on it
-    // keeps its plan, which is saved as that day's Day Plan.
-    if let Some(old) = state.schedules.iter().find(|s| s.id == id) {
-        if let Ok(old_tz) = old.time_zone.parse::<Tz>() {
-            let today = now.with_timezone(&old_tz).date_naive();
-            let weekday = today.weekday().number_from_monday() as u8;
-            if old.weekdays.contains(&weekday) && saved_plan(state, today).is_none() {
-                if let Some(plan) = schedule_plan_of(old, today) {
-                    if plan.starts_at <= now && now < plan.ends_at {
-                        state.day_plans.push(plan);
-                        state.day_plans.sort_by_key(|p| p.date);
-                    }
-                }
-            }
-        }
-    }
     let schedule = Schedule {
         id: id.to_string(),
         time_zone: time_zone.to_string(),
@@ -419,6 +414,31 @@ pub(crate) fn put_schedule(
             })
             .collect(),
     };
+    // A change to a Schedule takes effect from its next day: a day already running on it keeps
+    // its plan, and so does today before its plan starts if the change would cut its deep time.
+    // The kept plan is saved as that day's Day Plan.
+    if let Some(old) = state.schedules.iter().find(|s| s.id == id) {
+        if let Ok(old_tz) = old.time_zone.parse::<Tz>() {
+            let today = now.with_timezone(&old_tz).date_naive();
+            let weekday = today.weekday().number_from_monday() as u8;
+            if old.weekdays.contains(&weekday) && saved_plan(state, today).is_none() {
+                if let Some(plan) = schedule_plan_of(old, today) {
+                    let new_minutes = schedule
+                        .weekdays
+                        .contains(&weekday)
+                        .then(|| schedule_plan_of(&schedule, today))
+                        .flatten()
+                        .map_or(0, |p| p.planned_deep_minutes);
+                    let running = plan.starts_at <= now;
+                    let cut = new_minutes < plan.planned_deep_minutes;
+                    if now < plan.ends_at && (running || cut) {
+                        state.day_plans.push(plan);
+                        state.day_plans.sort_by_key(|p| p.date);
+                    }
+                }
+            }
+        }
+    }
     match state.schedules.iter_mut().find(|s| s.id == id) {
         Some(saved) => *saved = schedule,
         None => {

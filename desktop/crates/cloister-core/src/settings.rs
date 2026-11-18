@@ -58,9 +58,40 @@ impl PendingSettings {
     }
 }
 
+/// Settings that were in force until `until` (the history `workday` reads for days that have
+/// begun). Sorted by `until`; each one covers the time from the previous one's `until`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PastSettings {
+    pub workdays: Vec<u8>,
+    pub workday_start: String,
+    pub shutdown_time: String,
+    pub until: DateTime<Utc>,
+}
+
+impl PastSettings {
+    pub fn settings(&self) -> Settings {
+        Settings {
+            workdays: self.workdays.clone(),
+            workday_start: self.workday_start.clone(),
+            shutdown_time: self.shutdown_time.clone(),
+        }
+    }
+}
+
 impl Settings {
-    /// The stricter of two settings, field by field.
+    /// The stricter of two settings, field by field: Workdays in both, the later Workday Start
+    /// and the earlier Shutdown Time. If those times would leave no working time (Workday
+    /// Start at or after Shutdown Time), `self`'s times are kept, so a Workday always has a
+    /// Shutdown Ritual that lapses at the next Workday Start.
     pub fn tightest(&self, other: &Settings) -> Settings {
+        let workday_start = self.workday_start.clone().max(other.workday_start.clone());
+        let shutdown_time = self.shutdown_time.clone().min(other.shutdown_time.clone());
+        let (workday_start, shutdown_time) = if workday_start < shutdown_time {
+            (workday_start, shutdown_time)
+        } else {
+            (self.workday_start.clone(), self.shutdown_time.clone())
+        };
         Settings {
             workdays: self
                 .workdays
@@ -68,8 +99,8 @@ impl Settings {
                 .filter(|d| other.workdays.contains(d))
                 .copied()
                 .collect(),
-            workday_start: self.workday_start.clone().max(other.workday_start.clone()),
-            shutdown_time: self.shutdown_time.clone().min(other.shutdown_time.clone()),
+            workday_start,
+            shutdown_time,
         }
     }
 
@@ -111,8 +142,12 @@ fn time_zone(state: &State) -> Tz {
     state.time_zone.parse().unwrap_or(Tz::UTC)
 }
 
-/// The settings in force at `at`: the pending ones once their day has come.
+/// The settings in force at `at`: from the history for a time before the last change, else the
+/// pending ones once their day has come.
 pub fn settings_at(state: &State, at: DateTime<Utc>) -> Option<Settings> {
+    if let Some(past) = state.past_settings.iter().find(|p| at < p.until) {
+        return Some(past.settings());
+    }
     match &state.pending_settings {
         Some(p) if p.effective_at <= at => Some(p.settings()),
         _ => state.settings.clone(),
@@ -149,11 +184,21 @@ pub enum Workday {
     Bounds(DateTime<Utc>, DateTime<Utc>),
 }
 
-/// The Workday bounds of `date` under the settings in force when that day begins (or now, for
-/// a day that has begun).
+/// The Workday bounds of `date`. A day still to come uses the settings in force when it
+/// begins. A day that has begun keeps the Workday it was when it began (removing a Workday
+/// never erases that day's ritual or a past Missed Ritual); today takes the settings in force
+/// now if they keep it a Workday, so a later Workday Start or earlier Shutdown Time applies at
+/// once.
 pub fn workday(state: &State, date: NaiveDate, now: DateTime<Utc>) -> Workday {
-    let Some(settings) = settings_at(state, now.max(day_start(state, date))) else {
+    let begins = day_start(state, date);
+    let Some(current) = settings_at(state, now.max(begins)) else {
         return Workday::NotConfigured;
+    };
+    let today = now.with_timezone(&time_zone(state)).date_naive() == date;
+    let settings = if begins > now || (today && current.is_workday(date)) {
+        current
+    } else {
+        settings_at(state, begins).unwrap_or(current)
     };
     if !settings.is_workday(date) {
         return Workday::RestDay;
@@ -227,6 +272,7 @@ pub(crate) fn change_settings(
         return Ok(());
     };
     let in_force = base.tightest(&requested);
+    next.record_settings_change(&in_force, now);
     next.pending_settings = (in_force != requested)
         .then(|| PendingSettings::new(requested, next_day_boundary(next, now)));
     next.settings = Some(in_force);
@@ -234,6 +280,32 @@ pub(crate) fn change_settings(
 }
 
 impl State {
+    /// Keep the settings history before `in_force` replaces the settings at `now`: the stored
+    /// settings until pending ones took over, and the settings in force until now.
+    fn record_settings_change(&mut self, in_force: &Settings, now: DateTime<Utc>) {
+        let push = |past: &mut Vec<PastSettings>, s: Settings, until: DateTime<Utc>| {
+            if past.last().is_some_and(|p| p.until >= until) {
+                return;
+            }
+            past.push(PastSettings {
+                workdays: s.workdays,
+                workday_start: s.workday_start,
+                shutdown_time: s.shutdown_time,
+                until,
+            });
+        };
+        if let (Some(old), Some(p)) = (&self.settings, &self.pending_settings) {
+            if p.effective_at <= now && *old != p.settings() {
+                push(&mut self.past_settings, old.clone(), p.effective_at);
+            }
+        }
+        if let Some(base) = settings_at(self, now) {
+            if base != *in_force {
+                push(&mut self.past_settings, base, now);
+            }
+        }
+    }
+
     /// Fold in when the account's settings began, before [`State::merge_settings`]. Only
     /// moves earlier (more rituals count); taken as-is while this state has no settings yet.
     /// Unknown (`None`) here, with settings, already counts every Workday and stays.
