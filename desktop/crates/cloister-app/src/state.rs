@@ -10,7 +10,7 @@ use cloister_app_model::{
     Enforcer, Notice, Rules, ServiceRules, SocketEnforcer, Today, View,
 };
 use cloister_core::EntryKind;
-use cloister_enforcer::ipc::Request;
+use cloister_enforcer::ipc::{Planning, Request};
 use cloister_sync::{Device, DeviceSummary, SyncHandle, SyncOptions, SyncStatus};
 use gpui_kit::*;
 
@@ -33,6 +33,9 @@ pub struct Cloister {
     devices: Vec<DeviceSummary>,
     _sync: Option<SyncHandle>,
     _ticker: Task<()>,
+    /// Whether the app wears Night (Evening Lockdown, Rest Days), and the settle under way.
+    night: bool,
+    _settle: Option<Task<()>>,
 }
 
 /// Global handle so the tray and any window can reach the one [`Cloister`].
@@ -43,6 +46,11 @@ impl Cloister {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let mut today = Today::new(SocketEnforcer::from_env());
         today.refresh(Utc::now());
+        // Opened at night: already Night, no settle.
+        let night = today.view(Utc::now()).night();
+        if night {
+            crate::theme::use_palette(cx, crate::theme::Palette::night());
+        }
         let account = open_account().filter(Device::is_signed_in);
         // Blocklist edits go to the account when signed in (it decides; loosening waits
         // until tomorrow), else to the local service, which only takes tightening edits.
@@ -93,6 +101,12 @@ impl Cloister {
                         this.hand_off_to_service();
                         this.blocklists.refresh();
                     }
+                    // Shutdown Time and Workday Start: settle into Night or back to Day.
+                    let night = this.today.view(now).night();
+                    if night != this.night {
+                        this.night = night;
+                        this._settle = Some(crate::theme::settle(cx, night));
+                    }
                     cx.notify();
                 });
                 if alive.is_err() {
@@ -109,6 +123,8 @@ impl Cloister {
             devices: Vec::new(),
             _sync: sync,
             _ticker: ticker,
+            night,
+            _settle: None,
         }
     }
 
@@ -152,6 +168,7 @@ impl Cloister {
             .send(&Request::Sync {
                 blocks: state.blocks.clone(),
                 blocklists: Some(state.blocklist_edits()),
+                planning: Some(Planning::of(&state)),
             })
             .is_ok();
         let device = device.clone();

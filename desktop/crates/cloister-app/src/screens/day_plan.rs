@@ -90,7 +90,7 @@ fn default_mirror() -> PathBuf {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Day {
+pub(crate) enum Day {
     Today,
     Tomorrow,
 }
@@ -177,7 +177,7 @@ impl DayPlanView {
         cx.notify();
     }
 
-    fn show(&mut self, day: Day, cx: &mut Context<Self>) {
+    pub(crate) fn show(&mut self, day: Day, cx: &mut Context<Self>) {
         self.day = day;
         self.notice = None;
         self.reopen(cx);
@@ -403,6 +403,9 @@ impl Render for DayPlanView {
                             ),
                     )
                     .children(signed_out.map(|n| ui::notice(&p, &n)))
+                    .children(self.editor.is_rest_day().then(|| {
+                        ui::notice(&p, &Notice::what_is_so("A Rest Day has no Day Plan."))
+                    }))
                     .children(self.notice.clone().map(|n| {
                         div()
                             .id("plan-notice")
