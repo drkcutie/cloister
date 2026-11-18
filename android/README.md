@@ -36,3 +36,12 @@ minSdk 26.
 
 Debug builds are `testOnly` (Device Owner can be removed with `dpm remove-active-admin`) and carry a
 `DebugReceiver` for the smoke test (password sign-in against the local stack).
+
+## Onboarding
+
+First run (`ui/Onboarding.kt`, model `core/.../Onboarding.kt` with `OnboardingTest`): the philosophy, sign-in,
+the VPN, the app blocker and Device Admin one at a time (each skipped when already on), Workdays / Workday Start /
+Shutdown Time (`change_settings`, same checks as the desktop), then the optional Hardcore Mode guide: remove
+accounts, run `adb shell dpm set-device-owner dev.cloister/.app.enforce.AdminReceiver`, verify (the app asks
+Android whether it is Device Owner), add the accounts back. The phone reports `hardcore` with its Device row, and
+desktop Devices screens show it as "Enforcing with Hardcore Mode".

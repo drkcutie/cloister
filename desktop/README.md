@@ -77,3 +77,43 @@ The smoke test checks that blocked domains and subdomains don't resolve (filter 
 resolver), that DNS to another resolver is dropped by `pf`, that the hosts fallback and DNS
 settings are in place, that IPC refuses `cancel_block`, and that all of it still holds after
 `launchctl kickstart -k`. Surviving a reboot is a manual step it prints at the end.
+
+## Linux and Windows enforcement
+
+The same service, behind the same `Platform` seam; only the privileged layer differs
+(`cloister-enforcer/src/{linux,windows}.rs`, rules rendered by the tested `nft.rs` and `winfw.rs`).
+
+| | Linux | Windows |
+| --- | --- | --- |
+| Service | systemd unit `cloisterd.service` (`Restart=always`) | Windows Service `Cloister` (LocalSystem, restarts 1 s after it exits) |
+| DNS | `nftables` table `inet cloister`: non-root UDP 53 redirected to the filter, TCP 53 / 853 dropped | every adapter's DNS set to 127.0.0.1; firewall drops 53/853 to anything but loopback and the upstreams |
+| Blocked IPs | dropped in the same table | firewall rule `Cloister-blocked-sites` |
+| Hosts fallback | `/etc/hosts` | `C:\Windows\System32\drivers\etc\hosts` |
+| App killer | `/proc/*/exe` by name, SIGKILL | `tasklist` by image name, `taskkill /F` |
+| Ritual window | user units `cloister-ritual.{path,service}` (keeps reappearing; Wayland can't lock) | started in the console session by the service; topmost + keyboard hook (`cloister-kiosk`) |
+| IPC | `/var/run/cloister.sock` | AF_UNIX `C:\ProgramData\Cloister\cloister.sock` |
+
+Apps on Linux and Windows have no bundle ids: a Blocklist app entry matches an executable named like
+the entry or its last dot segment (`com.hnc.Discord` matches `Discord.exe`).
+
+Install on any OS (as root / Administrator; the app's onboarding does this with one admin prompt:
+`osascript ... with administrator privileges`, `pkexec`, or UAC):
+
+```sh
+cloisterd install --app /path/to/cloister-app
+```
+
+Seam B smoke tests: `scripts/linux/docker-smoke-test.sh` (builds and runs everything in a privileged
+Alpine container; nothing on the host changes), `scripts/linux/smoke-test.sh` on a real machine, and
+`scripts/windows/smoke-test.ps1` (elevated PowerShell). Kiosk checklists:
+`docs/checklists/shutdown-ritual-kiosk-{macos,windows,linux}.md`. Cross-check Windows from a Mac:
+`rustup target add x86_64-pc-windows-gnu && cargo check --target x86_64-pc-windows-gnu -p cloister-enforcer -p cloister-cli -p cloister-kiosk`
+(the GPUI app and `cloister-sync` need a mingw C compiler for `ring`).
+
+## Onboarding
+
+On first run the app shows onboarding instead of the main window: the philosophy (three screens),
+sign-in (email link or code, Google), installing the service, the Distraction List, Workdays /
+Workday Start / Shutdown Time, and tomorrow's Day Plan. Steps already done are skipped. The model is
+`cloister_app_model::Onboarding` (tests: `tests/onboarding.rs`). `CLOISTER_ONBOARDING=always|off`,
+`CLOISTER_ONBOARDING_STEP=sign-in|service|distraction-list|workdays` for development.
