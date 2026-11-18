@@ -11,11 +11,11 @@ use std::time::Duration;
 
 use cloister_app_model::{
     day_name, distraction_list, install_service_command, open_account, Enforcer, Notice,
-    Onboarding, OnboardingMarker, OnboardingStep, Progress, SignInForm, SocketEnforcer,
-    WorkdaysForm, PHILOSOPHY,
+    NoticeKind, Onboarding, OnboardingMarker, OnboardingStep, Progress, SettingsForm, SignInForm,
+    SocketEnforcer, WorkdaysForm, PHILOSOPHY,
 };
 use cloister_enforcer::ipc::{Request, Response};
-use cloister_sync::{CommandOutcome, Device, LoopbackRedirect, Pkce};
+use cloister_sync::{Device, LoopbackRedirect, Pkce};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -145,7 +145,7 @@ impl OnboardingView {
                     .device
                     .as_ref()
                     .and_then(|d| d.state().ok())
-                    .is_some_and(|s| s.settings.is_some()),
+                    .is_some_and(|s| s.settings_since.is_some()),
         }
     }
 
@@ -174,36 +174,33 @@ impl OnboardingView {
         cx.notify();
     }
 
-    /// Send the Workdays settings to the account. Whether onboarding may go on.
+    /// Send the Workdays settings to the account, through the Settings screen's form (so the
+    /// weekly Deep Hours target starts at its default too). Whether onboarding may go on.
     fn save_settings(&mut self) -> bool {
-        let command = match self.workdays.command() {
-            Ok(c) => c,
-            Err(notice) => {
-                self.notice = Some(notice);
-                return false;
-            }
-        };
+        // Checked here first so the notice speaks to this screen's fields.
+        if let Err(notice) = self.workdays.command() {
+            self.notice = Some(notice);
+            return false;
+        }
         let Some(device) = self.device.as_ref().filter(|d| d.is_signed_in()) else {
             // Nothing to save to: go on, settings can be set once signed in.
             return true;
         };
-        match device.send(&command) {
-            Ok(CommandOutcome::Accepted) => true,
-            Ok(CommandOutcome::Rejected { reason }) => {
-                self.notice = Some(Notice::refusal(
-                    &reason,
-                    None,
-                    &cloister_app_model::Zone::Local,
-                ));
-                false
-            }
-            Err(_) => {
-                self.notice = Some(Notice::what_is_so(
-                    "Settings couldn't be saved: the backend isn't reachable. Try again.",
-                ));
-                false
+        let mut form = SettingsForm::open(device);
+        form.set_time_zone(&self.workdays.time_zone);
+        for day in 1..=7 {
+            if form.is_workday(day) != self.workdays.workdays.contains(&day) {
+                form.toggle_workday(day);
             }
         }
+        form.set_workday_start(&self.workdays.workday_start);
+        form.set_shutdown_time(&self.workdays.shutdown_time);
+        let notice = form.save(device);
+        let saved = notice.kind == NoticeKind::Recorded;
+        if !saved {
+            self.notice = Some(notice);
+        }
+        saved
     }
 
     fn finish(&mut self, window: &mut Window, cx: &mut Context<Self>) {

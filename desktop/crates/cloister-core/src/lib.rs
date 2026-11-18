@@ -11,6 +11,7 @@
 mod blocklists;
 mod catalog;
 mod day_plan;
+mod review;
 mod ritual;
 mod settings;
 
@@ -28,6 +29,10 @@ pub use catalog::{related_domains, Blocklist, BlocklistKind, Catalog};
 pub use day_plan::{
     day_plan, planned_deep_minutes, planned_deep_sessions, schedule_plan, DayPlan, Schedule,
     ScheduleSlot, Slot, SlotInput,
+};
+pub use review::{
+    is_last_workday_of_week, next_week_boundary, week_start, week_summary, weekly_target_at,
+    PendingWeeklyTarget, WeekSummary, WeeklyTarget, DEPTH_TREND_LENGTH, WEEKLY_TARGET_HOURS,
 };
 pub use ritual::{
     next_workday_plan, ritual, ritual_due_at, ritual_screen, shutdown_delays_left,
@@ -76,6 +81,16 @@ pub struct State {
     /// Requested settings that loosen something, waiting for the next day boundary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_settings: Option<PendingSettings>,
+    /// When the first settings were made. A ritual due before then doesn't exist, so a new
+    /// account has no Missed Ritual. Omitted when unknown (then every Workday counts).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_since: Option<DateTime<Utc>>,
+    /// The weekly Deep Hours target in force as of the last change. Omitted until first set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weekly_target: Option<WeeklyTarget>,
+    /// A lower target waiting for the next week boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_weekly_target: Option<PendingWeeklyTarget>,
     /// The open Loose Ends, carried between days until closed. Sorted by capture, then id.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub loose_ends: Vec<LooseEnd>,
@@ -100,6 +115,9 @@ impl Default for State {
             breaches: Vec::new(),
             settings: None,
             pending_settings: None,
+            settings_since: None,
+            weekly_target: None,
+            pending_weekly_target: None,
             loose_ends: Vec::new(),
             rituals: Vec::new(),
             shutdown_delays: Vec::new(),
@@ -271,11 +289,20 @@ pub enum Command {
     CaptureLooseEnd { loose_end_id: String, text: String },
     /// Close a Loose End: it leaves the list.
     CloseLooseEnd { loose_end_id: String },
-    /// Postpone today's ritual and Evening Lockdown by 30 minutes. Once per ISO week, on a
-    /// Workday before its Shutdown Time.
+    /// Postpone today's ritual and Evening Lockdown to 30 minutes after Shutdown Time. Once per
+    /// ISO week, on a Workday from Workday Start until then, while today's ritual is open.
     UseShutdownDelay {},
-    /// Complete the due Shutdown Ritual. `typed` must be exactly "Shutdown complete".
-    CompleteRitual { typed: String },
+    /// Complete the due Shutdown Ritual. `typed` must be exactly "Shutdown complete". On the
+    /// last Workday of the week the Weekly Review is part of it: `weekly_target` (hours) sets
+    /// next week's target and is required then, refused otherwise.
+    CompleteRitual {
+        typed: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        weekly_target: Option<u16>,
+    },
+    /// Set the weekly Deep Hours target (1 to 100 hours). Raising applies now; lowering from
+    /// the next week boundary.
+    SetWeeklyTarget { hours: u16 },
 }
 
 /// How long the Quit-Social Block lasts: the one exception to the 24-hour cap.
@@ -333,6 +360,9 @@ pub enum Reason {
     DeepSlotRequired,
     WorkdayNotCovered,
     ConfirmationMismatch,
+    InvalidWeeklyTarget,
+    WeeklyReviewRequired,
+    WeeklyReviewNotDue,
 }
 
 impl Reason {
@@ -380,6 +410,9 @@ impl Reason {
             Reason::DeepSlotRequired => "deep_slot_required",
             Reason::WorkdayNotCovered => "workday_not_covered",
             Reason::ConfirmationMismatch => "confirmation_mismatch",
+            Reason::InvalidWeeklyTarget => "invalid_weekly_target",
+            Reason::WeeklyReviewRequired => "weekly_review_required",
+            Reason::WeeklyReviewNotDue => "weekly_review_not_due",
         }
     }
 }
@@ -644,7 +677,11 @@ fn apply(state: &State, command: &Command, now: DateTime<Utc>) -> Result<State, 
             ritual::close_loose_end(&mut next, loose_end_id)?
         }
         Command::UseShutdownDelay {} => ritual::use_shutdown_delay(&mut next, now)?,
-        Command::CompleteRitual { typed } => ritual::complete_ritual(&mut next, typed, now)?,
+        Command::CompleteRitual {
+            typed,
+            weekly_target,
+        } => ritual::complete_ritual(&mut next, typed, *weekly_target, now)?,
+        Command::SetWeeklyTarget { hours } => review::set_weekly_target(&mut next, *hours, now)?,
     }
     Ok(next)
 }

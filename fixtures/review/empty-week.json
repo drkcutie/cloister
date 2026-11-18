@@ -1,0 +1,17 @@
+{
+  "name": "empty-week",
+  "description": "With nothing recorded and no target, the scoreboard is an empty week in the account's time zone (Sunday night in New York is still the week of Monday the 5th).",
+  "state": { "blocks": [], "time_zone": "America/New_York" },
+  "at": "2026-01-12T04:00:00Z",
+  "expect": {
+    "week_start": "2026-01-05",
+    "target_hours": null,
+    "next_week_target_hours": null,
+    "deep_minutes_by_day": [0, 0, 0, 0, 0, 0, 0],
+    "deep_minutes": 0,
+    "depth_trend": [],
+    "missed_rituals": [],
+    "shutdown_delays": [],
+    "breaches": []
+  }
+}

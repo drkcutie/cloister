@@ -27,6 +27,12 @@ data class State(
     val settings: Settings? = null,
     /** Requested settings that loosen something, waiting for the next day boundary. */
     val pendingSettings: PendingSettings? = null,
+    /** When the first settings were made; no ritual is due before then. Null: unknown (every Workday counts). */
+    val settingsSince: Instant? = null,
+    /** The weekly Deep Hours target in force as of the last change. */
+    val weeklyTarget: WeeklyTarget? = null,
+    /** A lower target waiting for the next week boundary. */
+    val pendingWeeklyTarget: PendingWeeklyTarget? = null,
     /** Open Loose Ends, sorted by capture then id. */
     val looseEnds: List<LooseEnd> = emptyList(),
     /** Completed Shutdown Rituals, sorted by date. */
@@ -45,6 +51,9 @@ data class State(
         "breaches" to nonEmpty(breaches) { arr(it) { b -> b.toJson() } },
         "settings" to settings?.toJson(),
         "pending_settings" to pendingSettings?.toJson(),
+        "settings_since" to settingsSince?.let(::time),
+        "weekly_target" to weeklyTarget?.toJson(),
+        "pending_weekly_target" to pendingWeeklyTarget?.toJson(),
         "loose_ends" to nonEmpty(looseEnds) { arr(it) { l -> l.toJson() } },
         "rituals" to nonEmpty(rituals) { arr(it) { r -> r.toJson() } },
         "shutdown_delays" to nonEmpty(shutdownDelays) { arr(it) { d -> d.toJson() } },
@@ -63,6 +72,9 @@ data class State(
                 breaches = objects("breaches", emptyList(), Breach::fromJson),
                 settings = obj("settings", Settings::fromJson),
                 pendingSettings = obj("pending_settings", PendingSettings::fromJson),
+                settingsSince = instantOrNull("settings_since"),
+                weeklyTarget = obj("weekly_target", WeeklyTarget::fromJson),
+                pendingWeeklyTarget = obj("pending_weekly_target", PendingWeeklyTarget::fromJson),
                 looseEnds = objects("loose_ends", emptyList(), LooseEnd::fromJson),
                 rituals = objects("rituals", emptyList(), Ritual::fromJson),
                 shutdownDelays = objects("shutdown_delays", emptyList(), ShutdownDelay::fromJson),

@@ -223,6 +223,7 @@ pub(crate) fn change_settings(
     let Some(base) = settings_at(next, now) else {
         next.settings = Some(requested);
         next.pending_settings = None;
+        next.settings_since.get_or_insert(now);
         return Ok(());
     };
     let in_force = base.tightest(&requested);
@@ -233,6 +234,18 @@ pub(crate) fn change_settings(
 }
 
 impl State {
+    /// Fold in when the account's settings began, before [`State::merge_settings`]. Only
+    /// moves earlier (more rituals count); taken as-is while this state has no settings yet.
+    /// Unknown (`None`) here, with settings, already counts every Workday and stays.
+    pub fn merge_settings_since(&mut self, since: Option<DateTime<Utc>>) {
+        let configured = self.settings.is_some() || self.pending_settings.is_some();
+        self.settings_since = match (self.settings_since, since) {
+            _ if !configured => since.or(self.settings_since),
+            (Some(ours), Some(theirs)) => Some(ours.min(theirs)),
+            (ours, _) => ours,
+        };
+    }
+
     /// Fold in settings from the backend at `now` so that nothing loosens sooner than tomorrow
     /// from here. The time zone is taken only with the first settings.
     pub fn merge_settings(

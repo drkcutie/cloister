@@ -138,6 +138,7 @@ fun BeginScreen(device: Device, now: EnforcementNow, syncLabel: String, openSetu
             }
         }
         notice?.let { Notice(it) }
+        ShutdownDelayAction(device, device.state(), now.serverTime.takeIf { it != Instant.EPOCH } ?: device.serverTime())
         Status(syncLabel, on = syncLabel == "Online")
     }
 }

@@ -145,14 +145,29 @@ sealed interface Command {
         override fun toJson() = obj("type" to str("close_loose_end"), "loose_end_id" to str(looseEndId))
     }
 
-    /** Postpone today's ritual and Evening Lockdown by 30 minutes, once per ISO week. */
+    /**
+     * Postpone today's ritual and Evening Lockdown to 30 minutes after Shutdown Time, once per ISO
+     * week, from Workday Start until then, while today's ritual is open.
+     */
     data object UseShutdownDelay : Command {
         override fun toJson() = obj("type" to str("use_shutdown_delay"))
     }
 
-    /** Complete the due Shutdown Ritual; [typed] must be exactly "Shutdown complete". */
-    data class CompleteRitual(val typed: String) : Command {
-        override fun toJson() = obj("type" to str("complete_ritual"), "typed" to str(typed))
+    /**
+     * Complete the due Shutdown Ritual; [typed] must be exactly "Shutdown complete". On the last
+     * Workday of the week the Weekly Review is part of it: [weeklyTarget] (hours) sets next week's
+     * target and is required then, refused otherwise.
+     */
+    data class CompleteRitual(val typed: String, val weeklyTarget: Int? = null) : Command {
+        override fun toJson() = obj(
+            "type" to str("complete_ritual"), "typed" to str(typed),
+            "weekly_target" to weeklyTarget?.let(::JsonPrimitive),
+        )
+    }
+
+    /** Set the weekly Deep Hours target (1 to 100 hours): raising applies now, lowering next week. */
+    data class SetWeeklyTarget(val hours: Int) : Command {
+        override fun toJson() = obj("type" to str("set_weekly_target"), "hours" to JsonPrimitive(hours))
     }
 
     companion object {
@@ -204,7 +219,8 @@ sealed interface Command {
                     "capture_loose_end" -> CaptureLooseEnd(string("loose_end_id"), string("text"))
                     "close_loose_end" -> CloseLooseEnd(string("loose_end_id"))
                     "use_shutdown_delay" -> UseShutdownDelay
-                    "complete_ritual" -> CompleteRitual(string("typed"))
+                    "complete_ritual" -> CompleteRitual(string("typed"), longOrNull("weekly_target")?.let(::hours))
+                    "set_weekly_target" -> SetWeeklyTarget(hours(long("hours")))
                     else -> throw JsonFormException("unknown command type `$type`")
                 }.also { done() }
             }
@@ -232,6 +248,10 @@ data class SlotInput(
         }
     }
 }
+
+/** Hours as the Rust engine reads them (u16): anything else isn't a command. */
+private fun hours(n: Long): Int =
+    n.takeIf { it in 0..65535 }?.toInt() ?: throw JsonFormException("hours must be 0 to 65535")
 
 /** Why a command was rejected: a stable snake_case [code] shared by every engine. */
 enum class Reason(val code: String) {
@@ -276,7 +296,10 @@ enum class Reason(val code: String) {
     DayPlanRequired("day_plan_required"),
     DeepSlotRequired("deep_slot_required"),
     WorkdayNotCovered("workday_not_covered"),
-    ConfirmationMismatch("confirmation_mismatch");
+    ConfirmationMismatch("confirmation_mismatch"),
+    InvalidWeeklyTarget("invalid_weekly_target"),
+    WeeklyReviewRequired("weekly_review_required"),
+    WeeklyReviewNotDue("weekly_review_not_due");
 
     companion object {
         /** The Reason for a code, or null for a code only the backend uses. */

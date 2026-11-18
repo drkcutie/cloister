@@ -1,0 +1,43 @@
+{
+  "name": "week-in-progress",
+  "description": "Thursday noon: deep minutes per local day count deep Blocks and deep Slots up to now (a plain Block doesn't count, a session over midnight splits), the depth trend runs over recent rated sessions, and the week's Missed Rituals, Shutdown Delays and Breaches are listed; the lowered target shows as next week's.",
+  "state": {
+    "blocks": [
+      { "id": "b0", "starts_at": "2026-01-02T10:00:00Z", "ends_at": "2026-01-02T11:00:00Z", "blocklists": ["social"], "deep": true, "depth_rating": 2 },
+      { "id": "b1", "starts_at": "2026-01-05T09:00:00Z", "ends_at": "2026-01-05T11:00:00Z", "blocklists": ["social"], "deep": true, "depth_rating": 3 },
+      { "id": "b2", "starts_at": "2026-01-05T13:00:00Z", "ends_at": "2026-01-05T14:00:00Z", "blocklists": ["social"], "deep": false },
+      { "id": "b3", "starts_at": "2026-01-06T23:30:00Z", "ends_at": "2026-01-07T00:30:00Z", "blocklists": ["social"], "deep": true, "depth_rating": 4 },
+      { "id": "b4", "starts_at": "2026-01-08T11:00:00Z", "ends_at": "2026-01-08T13:00:00Z", "blocklists": ["social"], "deep": true }
+    ],
+    "day_plans": [{
+      "date": "2026-01-07", "starts_at": "2026-01-07T09:00:00Z", "ends_at": "2026-01-07T17:00:00Z",
+      "planned_deep_minutes": 90,
+      "slots": [
+        { "id": "s1", "starts_at": "2026-01-07T09:00:00Z", "ends_at": "2026-01-07T10:30:00Z", "label": "Write", "deep": true, "depth_rating": 5 },
+        { "id": "s2", "starts_at": "2026-01-07T10:30:00Z", "ends_at": "2026-01-07T17:00:00Z", "label": "Admin", "deep": false }
+      ]
+    }],
+    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+    "settings_since": "2026-01-01T00:00:00Z",
+    "weekly_target": { "hours": 20 },
+    "pending_weekly_target": { "hours": 15, "effective_at": "2026-01-12T00:00:00Z" },
+    "rituals": [{ "date": "2026-01-05", "completed_at": "2026-01-05T17:10:00Z" }],
+    "shutdown_delays": [{ "date": "2026-01-06", "used_at": "2026-01-06T16:00:00Z" }],
+    "breaches": [
+      { "id": "p0", "kind": "app_blocker_turned_off", "occurred_at": "2026-01-04T10:00:00Z" },
+      { "id": "p1", "kind": "vpn_turned_off", "occurred_at": "2026-01-07T10:00:00Z" }
+    ]
+  },
+  "at": "2026-01-08T12:00:00Z",
+  "expect": {
+    "week_start": "2026-01-05",
+    "target_hours": 20,
+    "next_week_target_hours": 15,
+    "deep_minutes_by_day": [120, 30, 120, 60, 0, 0, 0],
+    "deep_minutes": 330,
+    "depth_trend": [2, 3, 4, 5],
+    "missed_rituals": ["2026-01-06", "2026-01-07"],
+    "shutdown_delays": ["2026-01-06"],
+    "breaches": [{ "id": "p1", "kind": "vpn_turned_off", "occurred_at": "2026-01-07T10:00:00Z" }]
+  }
+}

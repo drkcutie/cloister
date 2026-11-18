@@ -57,7 +57,7 @@ fun OnboardingScreen(device: Device, now: EnforcementNow, version: Long, configu
         vpnOn = now.vpnRunning,
         appBlockerOn = now.appBlockerOn,
         adminActive = now.adminActive,
-        settingsSet = remember(version) { device.state().settings != null },
+        settingsSet = remember(version) { device.state().settingsSince != null },
         deviceOwner = now.deviceOwner,
     )
     val flow = remember { Onboarding() }

@@ -95,6 +95,9 @@ pub struct Planning {
     pub settings: Option<Settings>,
     #[serde(default)]
     pub pending_settings: Option<PendingSettings>,
+    /// When the first settings were made (no ritual is due before then).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_since: Option<DateTime<Utc>>,
     #[serde(default)]
     pub day_plans: Vec<DayPlan>,
     #[serde(default)]
@@ -118,6 +121,7 @@ impl Planning {
             time_zone: state.time_zone.clone(),
             settings: state.settings.clone(),
             pending_settings: state.pending_settings.clone(),
+            settings_since: state.settings_since,
             day_plans: state.day_plans.clone(),
             schedules: state.schedules.clone(),
             shutdown_delays: state.shutdown_delays.clone(),

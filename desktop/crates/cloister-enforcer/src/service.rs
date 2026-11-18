@@ -204,6 +204,8 @@ fn tightens(command: &Command) -> bool {
         Command::WriteDayPlan { .. }
         | Command::PutSchedule { .. }
         | Command::ChangeSettings { .. } => false,
+        // The weekly target changes nothing a Device enforces: it lives in the account only.
+        Command::SetWeeklyTarget { .. } => false,
         // A Loose End is a record. A Shutdown Delay or a completed ritual lifts enforcement:
         // the backend decides and the Sync hands the record over (merge_ritual_records).
         Command::CaptureLooseEnd { .. } => true,
@@ -249,6 +251,7 @@ pub fn merge_blocks(state: &State, incoming: &[Block]) -> Option<State> {
 /// through the rules engine (a running day keeps its plan), and a Day Plan is taken only if it
 /// keeps every started Deep Session and doesn't reduce the deep time still to come.
 pub fn merge_planning(state: &mut State, planning: &Planning, now: DateTime<Utc>) {
+    state.merge_settings_since(planning.settings_since);
     state.merge_settings(
         &planning.time_zone,
         planning.settings.as_ref(),

@@ -2,7 +2,8 @@
 //! while cloisterd says the ritual is due.
 //!
 //! It covers every display in the Night theme, under the kiosk lock ([`kiosk`]). The main
-//! display walks the five steps (brass-numbered); the others say where the ritual is. Once a
+//! display walks the five steps (six with the Weekly Review on the last Workday of the week,
+//! brass-numbered), with the Shutdown Delay at hand while one is left; the others say where the ritual is. Once a
 //! second it asks cloisterd whether the ritual is still due, and quits when it isn't
 //! (completed here or on another Device, or lapsed at Workday Start). Completing hands the
 //! account's records to cloisterd at once, so the window goes within a second.
@@ -12,7 +13,10 @@ mod kiosk;
 use std::time::{Duration, Instant};
 
 use cloister_app_model::format::hours;
-use cloister_app_model::{Enforcer, Hold, Notice, RitualFlow, RitualStep, SocketEnforcer, Zone};
+use cloister_app_model::{
+    scoreboard, shutdown_delay, use_shutdown_delay, Enforcer, Hold, Notice, NoticeKind,
+    PlanBackend, RitualFlow, RitualStep, SocketEnforcer, Zone,
+};
 use cloister_core::RitualScreen;
 use cloister_enforcer::ipc::{Planning, Request, Response};
 use cloister_sync::{Device, SyncHandle, SyncOptions};
@@ -262,6 +266,24 @@ impl RitualView {
         cx.notify();
     }
 
+    /// Use this week's Shutdown Delay from the ritual. cloisterd lifts the ritual on the hand-off.
+    fn delay(&mut self, cx: &mut Cx) {
+        let notice = use_shutdown_delay(&self.plans, &Zone::Local);
+        if notice.kind == NoticeKind::Recorded {
+            if let Plans::Device(device) = &self.plans {
+                hand_off(device);
+            }
+        }
+        self.notice = Some(notice);
+        cx.notify();
+    }
+
+    fn change_target(&mut self, by: i32, cx: &mut Cx) {
+        let next = (i32::from(self.flow.weekly_target()) + by).clamp(1, 100);
+        self.flow.set_weekly_target(next as u16);
+        cx.notify();
+    }
+
     fn press_hold(&mut self, cx: &mut Cx) {
         if !self.flow.typed_matches() || self.hold.is_holding() {
             return;
@@ -309,7 +331,27 @@ impl RitualView {
     fn render(&mut self, _window: &mut Window, cx: &mut Cx) -> Stateful<Div> {
         let p = cx.palette();
         let step = self.flow.step();
-        let steps = RitualStep::ALL.iter().map(|&s| {
+        let delay = shutdown_delay(
+            &self.plans.state().unwrap_or_default(),
+            self.plans.server_time(),
+        );
+        let delay_button = (delay.left > 0 && matches!(self.plans, Plans::Device(_))).then(|| {
+            Type::Label
+                .apply(div())
+                .id("delay")
+                .min_h(space::TARGET)
+                .px(space::S3)
+                .flex()
+                .items_center()
+                .rounded(radius::CONTROL)
+                .border_1()
+                .border_color(p.ink_3)
+                .cursor_pointer()
+                .on_click(cx.listener(|this, _, _, cx| view(this).delay(cx)))
+                .child(format!("Delay 30 min ({} left this week)", delay.left))
+        });
+        let all_steps = self.flow.steps().to_vec();
+        let steps = all_steps.into_iter().enumerate().map(|(i, s)| {
             let on = s == step;
             div()
                 .flex()
@@ -320,7 +362,7 @@ impl RitualView {
                     Type::Figure(13.)
                         .apply(div())
                         .text_color(p.brass)
-                        .child(s.number()),
+                        .child(format!("{:02}", i + 1)),
                 )
                 .child(
                     Type::Body
@@ -338,6 +380,7 @@ impl RitualView {
                 Some(plan) => div().h(px(560.)).child(plan.clone()),
                 None => div(),
             },
+            RitualStep::WeeklyReview => self.weekly_review(&p, cx),
             RitualStep::Commit => self.commit_step(&p, cx),
         };
         let mut nav = div().flex().gap(space::S3);
@@ -379,7 +422,9 @@ impl RitualView {
                     .flex_col()
                     .gap(space::S2)
                     .child(ui::eyebrow(&p, "Shutdown Ritual"))
-                    .children(steps),
+                    .children(steps)
+                    .child(div().h(space::S8))
+                    .children(delay_button),
             )
             .child(
                 div()
@@ -406,7 +451,7 @@ impl RitualView {
                                         Type::Figure(20.)
                                             .apply(div())
                                             .text_color(p.brass)
-                                            .child(step.number()),
+                                            .child(self.flow.number()),
                                     )
                                     .child(Type::Display.apply(div()).child(step.title())),
                             )
@@ -515,6 +560,56 @@ impl RitualView {
                 Type::Figure(40.)
                     .apply(div())
                     .child(hours(review.deep_hours_this_week)),
+            )
+    }
+
+    /// The week on the scoreboard, then next week's target.
+    fn weekly_review(&mut self, p: &Palette, cx: &mut Cx) -> Div {
+        let state = self.plans.state().unwrap_or_default();
+        let board = scoreboard(&state, self.plans.server_time(), &Zone::Local);
+        let step_button = |id: &'static str, label: &'static str, by: i32, cx: &mut Cx| {
+            Type::Label
+                .apply(div())
+                .id(id)
+                .h(space::TARGET)
+                .px(space::S4)
+                .flex()
+                .items_center()
+                .rounded(radius::CONTROL)
+                .border_1()
+                .border_color(p.ink)
+                .cursor_pointer()
+                .on_click(cx.listener(move |this, _, _, cx| view(this).change_target(by, cx)))
+                .child(label)
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap(space::S6)
+            .child(crate::screens::weekly_review::scoreboard(p, &board))
+            .child(ui::eyebrow(p, "Next week's target"))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(space::S3)
+                    .child(step_button("target-less", "Fewer", -1, cx))
+                    .child(
+                        Type::Figure(28.)
+                            .apply(div())
+                            .w(px(160.))
+                            .flex()
+                            .justify_center()
+                            .child(format!("{} Deep Hours", self.flow.weekly_target())),
+                    )
+                    .child(step_button("target-more", "More", 1, cx)),
+            )
+            .child(
+                Type::Label
+                    .apply(div())
+                    .font_weight(FontWeight::NORMAL)
+                    .text_color(p.ink_2)
+                    .child(self.flow.target_note(&self.plans)),
             )
     }
 

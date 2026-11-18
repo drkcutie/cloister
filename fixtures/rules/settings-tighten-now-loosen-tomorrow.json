@@ -11,7 +11,8 @@
         "state": {
           "blocks": [],
           "time_zone": "America/New_York",
-          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" }
+          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+          "settings_since": "2026-01-05T14:00:00Z"
         },
         "enforcement": { "blocked_domains": [] }
       }
@@ -24,7 +25,8 @@
         "state": {
           "blocks": [],
           "time_zone": "America/New_York",
-          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "15:00" }
+          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "15:00" },
+          "settings_since": "2026-01-05T14:00:00Z"
         },
         "enforcement": { "blocked_domains_include": ["github.com", "youtube.com"] }
       }
@@ -38,6 +40,7 @@
           "blocks": [],
           "time_zone": "America/New_York",
           "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "15:00" },
+          "settings_since": "2026-01-05T14:00:00Z",
           "pending_settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00", "effective_at": "2026-01-06T05:00:00Z" }
         },
         "enforcement": { "blocked_domains_include": ["github.com"] }
@@ -60,6 +63,7 @@
           "blocks": [],
           "time_zone": "America/New_York",
           "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "16:00" },
+          "settings_since": "2026-01-05T14:00:00Z",
           "pending_settings": { "workdays": [1, 2, 3, 4, 5, 6], "workday_start": "08:00", "shutdown_time": "16:00", "effective_at": "2026-01-07T05:00:00Z" }
         }
       }
@@ -84,7 +88,8 @@
         "state": {
           "blocks": [],
           "time_zone": "America/New_York",
-          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "08:00", "shutdown_time": "16:00" }
+          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "08:00", "shutdown_time": "16:00" },
+          "settings_since": "2026-01-05T14:00:00Z"
         },
         "enforcement": { "blocked_domains_include": ["github.com", "youtube.com"] }
       }

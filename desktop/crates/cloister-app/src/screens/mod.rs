@@ -13,12 +13,14 @@ mod ended;
 mod onboarding;
 mod rating;
 mod session;
+mod settings;
 mod sidebar;
+pub(crate) mod weekly_review;
 
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
-use cloister_app_model::{BeginForm, Hold, Length};
+use cloister_app_model::{BeginForm, Hold, Length, Notice, SettingsForm};
 use cloister_core::EntryKind;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::*;
@@ -33,7 +35,9 @@ pub enum Screen {
     Today,
     DayPlan,
     Blocklists,
+    WeeklyReview,
     Devices,
+    Settings,
 }
 
 pub struct MainView {
@@ -47,6 +51,10 @@ pub struct MainView {
     /// The Quit-Social Block's "can't be undone" confirmation is showing.
     confirm_quit_social: bool,
     day_plan: Option<Entity<day_plan::DayPlanView>>,
+    /// The Settings form while that screen is open (reopened each time it is shown).
+    settings: Option<SettingsForm>,
+    settings_time_zone: Entity<InputState>,
+    settings_notice: Option<Notice>,
     form: BeginForm,
     intent: Entity<InputState>,
     custom: Entity<InputState>,
@@ -67,8 +75,19 @@ impl MainView {
         let custom = cx.new(|cx| InputState::new(window, cx).placeholder("75"));
         let entry = cx.new(|cx| InputState::new(window, cx).placeholder("example.com or Discord"));
         let extra = cx.new(|cx| InputState::new(window, cx).placeholder("example.com or Steam"));
+        let settings_time_zone =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Europe/Paris"));
         let subscriptions = vec![
             cx.observe(&cloister, |_, _, cx| cx.notify()),
+            cx.subscribe_in(&settings_time_zone, window, |this, state, event, _, cx| {
+                if let InputEvent::Change = event {
+                    let tz = state.read(cx).value().to_string();
+                    if let Some(f) = this.settings.as_mut() {
+                        f.set_time_zone(&tz);
+                    }
+                    cx.notify();
+                }
+            }),
             cx.subscribe_in(&intent, window, |this, state, event, _, cx| {
                 if let InputEvent::Change = event {
                     this.form.intent = state.read(cx).value().to_string();
@@ -100,6 +119,8 @@ impl MainView {
                 Ok("blocklists") => Screen::Blocklists,
                 Ok("devices") => Screen::Devices,
                 Ok("day-plan") => Screen::DayPlan,
+                Ok("weekly-review") => Screen::WeeklyReview,
+                Ok("settings") => Screen::Settings,
                 _ => Screen::Today,
             },
             entry,
@@ -107,6 +128,9 @@ impl MainView {
             extra,
             confirm_quit_social: false,
             day_plan: None,
+            settings: None,
+            settings_time_zone,
+            settings_notice: None,
             form: BeginForm::default(),
             intent,
             custom,
@@ -130,8 +154,29 @@ impl MainView {
         if screen == Screen::DayPlan && self.day_plan.is_none() {
             self.day_plan = Some(cx.new(|cx| day_plan::DayPlanView::new(window, cx)));
         }
+        if screen == Screen::Settings {
+            self.settings = None;
+            self.settings_notice = None;
+            if let Some(device) = self.cloister.read(cx).account() {
+                let form = SettingsForm::open(device);
+                let tz = form.time_zone().to_string();
+                self.settings_time_zone
+                    .update(cx, |s, cx| s.set_value(tz, window, cx));
+                self.settings = Some(form);
+            }
+        }
         self.confirm_quit_social = false;
         self.cloister.update(cx, |c, cx| c.dismiss_notice(cx));
+    }
+
+    fn save_settings(&mut self, cx: &mut Context<Self>) {
+        let Some(device) = self.cloister.read(cx).account().cloned() else {
+            return;
+        };
+        if let Some(form) = self.settings.as_mut() {
+            self.settings_notice = Some(form.save(&device));
+        }
+        cx.notify();
     }
 
     /// The Day Plan screen on the next Workday: today before Workday Start, else tomorrow.
@@ -250,6 +295,20 @@ impl Render for MainView {
                     sidebar::with_sidebar(self, &view, content, cx),
                 ))
             }
+            (Screen::WeeklyReview, _) => {
+                let content = weekly_review::render(self, cx);
+                root.child(ui::fade_in(
+                    "weekly-review",
+                    sidebar::with_sidebar(self, &view, content, cx),
+                ))
+            }
+            (Screen::Settings, _) => {
+                let content = settings::render(self, cx);
+                root.child(ui::fade_in(
+                    "settings",
+                    sidebar::with_sidebar(self, &view, content, cx),
+                ))
+            }
             (Screen::Devices, _) => {
                 let content = devices::render(self, cx);
                 root.child(ui::fade_in(
@@ -305,9 +364,15 @@ pub fn open_main_window(cx: &mut App) {
     if let Err(e) = gpui_kit::open_window(options, cx, |window, cx| {
         cx.new(|cx| {
             let mut view = MainView::new(window, cx);
-            // Development aid: `CLOISTER_OPEN=day-plan` opens on the Day Plan screen.
-            if std::env::var("CLOISTER_OPEN").as_deref() == Ok("day-plan") {
-                view.show(Screen::DayPlan, window, cx);
+            // Development aid: `CLOISTER_OPEN=day-plan|weekly-review|settings` opens on that screen.
+            let open = match std::env::var("CLOISTER_OPEN").as_deref() {
+                Ok("day-plan") => Some(Screen::DayPlan),
+                Ok("weekly-review") => Some(Screen::WeeklyReview),
+                Ok("settings") => Some(Screen::Settings),
+                _ => None,
+            };
+            if let Some(screen) = open {
+                view.show(screen, window, cx);
             }
             view
         })

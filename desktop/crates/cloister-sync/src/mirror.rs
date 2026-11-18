@@ -17,6 +17,10 @@ const SHUTDOWN_DELAYS_KEY: &str = "shutdown_delays";
 const SCHEDULES_KEY: &str = "schedules";
 const SETTINGS_KEY: &str = "settings";
 const PENDING_SETTINGS_KEY: &str = "pending_settings";
+const SETTINGS_SINCE_KEY: &str = "settings_since";
+const WEEKLY_TARGET_KEY: &str = "weekly_target";
+const PENDING_WEEKLY_TARGET_KEY: &str = "pending_weekly_target";
+const BREACHES_KEY: &str = "breaches";
 
 pub struct Mirror {
     db: Connection,
@@ -109,6 +113,10 @@ impl Mirror {
             loose_ends: self.json(LOOSE_ENDS_KEY)?,
             rituals: self.json(RITUALS_KEY)?,
             shutdown_delays: self.json(SHUTDOWN_DELAYS_KEY)?,
+            settings_since: self.json(SETTINGS_SINCE_KEY)?,
+            weekly_target: self.json(WEEKLY_TARGET_KEY)?,
+            pending_weekly_target: self.json(PENDING_WEEKLY_TARGET_KEY)?,
+            breaches: self.json(BREACHES_KEY)?,
             ..State::default()
         };
         if let Some(tz) = self.get(TIME_ZONE_KEY)? {
@@ -222,11 +230,24 @@ impl Mirror {
         Ok(changed)
     }
 
-    /// Take the backend's Loose Ends, completed rituals and Shutdown Delays as they are (the
-    /// backend applied the rules; an enforcement service checks them again on merge). Returns
-    /// whether anything changed.
+    /// Take the backend's Loose Ends, completed rituals, Shutdown Delays, settings start, weekly
+    /// target and Breaches as they are (the backend applied the rules; an enforcement service
+    /// checks the ritual records again on merge). Returns whether anything changed.
     pub fn replace_ritual_records(&mut self, state: &State) -> Result<bool> {
         let values = [
+            (
+                SETTINGS_SINCE_KEY,
+                serde_json::to_string(&state.settings_since),
+            ),
+            (
+                WEEKLY_TARGET_KEY,
+                serde_json::to_string(&state.weekly_target),
+            ),
+            (
+                PENDING_WEEKLY_TARGET_KEY,
+                serde_json::to_string(&state.pending_weekly_target),
+            ),
+            (BREACHES_KEY, serde_json::to_string(&state.breaches)),
             (LOOSE_ENDS_KEY, serde_json::to_string(&state.loose_ends)),
             (RITUALS_KEY, serde_json::to_string(&state.rituals)),
             (

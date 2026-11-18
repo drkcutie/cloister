@@ -1,4 +1,5 @@
-//! The Shutdown Ritual's five steps, the Shutdown Time warnings and the Shutdown Delay.
+//! The Shutdown Ritual's five steps (six on the last Workday of the week, with the Weekly
+//! Review), the Shutdown Time warnings and the Shutdown Delay.
 //!
 //! Each step's requirement is decided by the rules engine on the state last synced (the same
 //! rules the backend applies to `complete_ritual`), so a step holds exactly when completing
@@ -6,8 +7,9 @@
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use cloister_core::{
-    day_plan, decide, ritual, ritual_due_at, shutdown_delays_left, Command, DayPlan, LooseEnd,
-    Outcome, State, SHUTDOWN_COMPLETE,
+    day_plan, decide, is_last_workday_of_week, next_week_boundary, ritual, ritual_due_at,
+    shutdown_delays_left, weekly_target_at, Command, DayPlan, LooseEnd, Outcome, State,
+    SHUTDOWN_COMPLETE, WEEKLY_TARGET_HOURS,
 };
 
 use crate::day_plan::PlanBackend;
@@ -20,47 +22,26 @@ pub enum RitualStep {
     Review,
     Draft,
     Plan,
+    /// Only on the last Workday of the week.
+    WeeklyReview,
     Commit,
 }
 
 impl RitualStep {
-    pub const ALL: [RitualStep; 5] = [
-        RitualStep::LooseEnds,
-        RitualStep::Review,
-        RitualStep::Draft,
-        RitualStep::Plan,
-        RitualStep::Commit,
-    ];
-
-    /// The brass step number: "01" to "05".
-    pub fn number(self) -> &'static str {
-        match self {
-            RitualStep::LooseEnds => "01",
-            RitualStep::Review => "02",
-            RitualStep::Draft => "03",
-            RitualStep::Plan => "04",
-            RitualStep::Commit => "05",
-        }
-    }
-
     pub fn title(self) -> &'static str {
         match self {
             RitualStep::LooseEnds => "Loose Ends",
             RitualStep::Review => "Review today",
             RitualStep::Draft => "Tomorrow's draft",
             RitualStep::Plan => "Plan tomorrow",
+            RitualStep::WeeklyReview => "Weekly Review",
             RitualStep::Commit => "Shutdown complete",
         }
     }
-
-    fn next(self) -> Option<RitualStep> {
-        Self::ALL.get(self as usize + 1).copied()
-    }
-
-    fn previous(self) -> Option<RitualStep> {
-        (self as usize).checked_sub(1).map(|i| Self::ALL[i])
-    }
 }
+
+/// The target a Weekly Review starts from when none is set.
+pub const DEFAULT_WEEKLY_TARGET: u16 = 20;
 
 /// One Deep Session of today, for the review.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,48 +61,110 @@ pub struct Review {
 
 /// The Shutdown Ritual as it is walked on one screen.
 pub struct RitualFlow {
-    step: RitualStep,
+    steps: Vec<RitualStep>,
+    at: usize,
     typed: String,
+    weekly_target: u16,
     zone: Zone,
 }
 
 impl RitualFlow {
-    pub fn open(_backend: &impl PlanBackend, zone: Zone) -> Self {
+    pub fn open(backend: &impl PlanBackend, zone: Zone) -> Self {
+        let state = backend.state().unwrap_or_default();
+        let now = backend.server_time();
+        let weekly_review =
+            ritual(&state, now).is_some_and(|r| is_last_workday_of_week(&state, r.date, now));
+        let mut steps = vec![
+            RitualStep::LooseEnds,
+            RitualStep::Review,
+            RitualStep::Draft,
+            RitualStep::Plan,
+        ];
+        if weekly_review {
+            steps.push(RitualStep::WeeklyReview);
+        }
+        steps.push(RitualStep::Commit);
         RitualFlow {
-            step: RitualStep::LooseEnds,
+            steps,
+            at: 0,
             typed: String::new(),
+            weekly_target: weekly_target_at(&state, now).unwrap_or(DEFAULT_WEEKLY_TARGET),
             zone,
         }
     }
 
     pub fn step(&self) -> RitualStep {
-        self.step
+        self.steps[self.at]
+    }
+
+    /// Every step of tonight's ritual, in order.
+    pub fn steps(&self) -> &[RitualStep] {
+        &self.steps
+    }
+
+    /// The brass number of the current step: "01", "02"...
+    pub fn number(&self) -> String {
+        format!("{:02}", self.at + 1)
+    }
+
+    /// Whether tonight's ritual holds the Weekly Review.
+    pub fn has_weekly_review(&self) -> bool {
+        self.steps.contains(&RitualStep::WeeklyReview)
+    }
+
+    /// Next week's target, in hours, as chosen in the Weekly Review.
+    pub fn weekly_target(&self) -> u16 {
+        self.weekly_target
+    }
+
+    /// Choose next week's target (kept within 1 to 100 hours).
+    pub fn set_weekly_target(&mut self, hours: u16) {
+        self.weekly_target = hours.clamp(*WEEKLY_TARGET_HOURS.start(), *WEEKLY_TARGET_HOURS.end());
+    }
+
+    /// What the chosen target will do: a higher one applies now, a lower one next week.
+    pub fn target_note(&self, backend: &impl PlanBackend) -> String {
+        let state = backend.state().unwrap_or_default();
+        let now = backend.server_time();
+        match weekly_target_at(&state, now) {
+            Some(t) if self.weekly_target < t => format!(
+                "A lower target takes effect {}.",
+                day(next_week_boundary(&state, now), &self.zone)
+            ),
+            Some(t) if self.weekly_target > t => "A higher target applies now.".into(),
+            Some(_) => "The target stays as it is.".into(),
+            None => "The target applies now.".into(),
+        }
+    }
+
+    fn sent_target(&self) -> Option<u16> {
+        self.has_weekly_review().then_some(self.weekly_target)
     }
 
     pub fn back(&mut self) {
-        if let Some(previous) = self.step.previous() {
-            self.step = previous;
-        }
+        self.at = self.at.saturating_sub(1);
     }
 
     /// Move on, unless this step's requirement isn't met yet (then: what it needs).
     pub fn next(&mut self, backend: &impl PlanBackend) -> Result<(), Notice> {
         if let Some(code) = self.holding_reason(backend) {
             let held = matches!(
-                (self.step, code.as_str()),
+                (self.step(), code.as_str()),
                 (RitualStep::LooseEnds, "loose_end_required")
                     | (
                         RitualStep::Plan,
                         "day_plan_required" | "deep_slot_required" | "workday_not_covered"
+                    )
+                    | (
+                        RitualStep::WeeklyReview,
+                        "weekly_review_required" | "invalid_weekly_target"
                     )
             );
             if held {
                 return Err(self.notice(backend, &code));
             }
         }
-        if let Some(next) = self.step.next() {
-            self.step = next;
-        }
+        self.at = (self.at + 1).min(self.steps.len() - 1);
         Ok(())
     }
 
@@ -130,6 +173,7 @@ impl RitualFlow {
         let state = backend.state().unwrap_or_default();
         let command = Command::CompleteRitual {
             typed: SHUTDOWN_COMPLETE.into(),
+            weekly_target: self.sent_target(),
         };
         match decide(&state, &command, backend.server_time()).outcome {
             Outcome::Accepted => None,
@@ -236,6 +280,7 @@ impl RitualFlow {
     pub fn complete(&mut self, backend: &impl PlanBackend) -> Result<Notice, Notice> {
         let command = Command::CompleteRitual {
             typed: self.typed.clone(),
+            weekly_target: self.sent_target(),
         };
         if let Some(notice) = self.send(backend, &command) {
             return Err(notice);
@@ -282,6 +327,8 @@ impl RitualFlow {
             "confirmation_mismatch" => format!("Type \"{SHUTDOWN_COMPLETE}\" exactly."),
             "ritual_not_due" => "No Shutdown Ritual is due.".into(),
             "ritual_already_completed" => "Shutdown is already complete.".into(),
+            "weekly_review_required" => "Set next week's target.".into(),
+            "invalid_weekly_target" => "A weekly target is 1 to 100 Deep Hours.".into(),
             other => return Notice::refusal(other, None, &self.zone),
         })
     }
@@ -380,8 +427,11 @@ pub fn use_shutdown_delay(backend: &impl PlanBackend, zone: &Zone) -> Notice {
         Ok(Some(code)) if code == "shutdown_delay_used" => {
             Notice::what_is_so("No Shutdown Delay left this week.")
         }
-        Ok(Some(code)) if code == "evening_lockdown" || code == "rest_day" => {
-            Notice::what_is_so("A Shutdown Delay is used before Shutdown Time, on a Workday.")
+        Ok(Some(code)) if code == "evening_lockdown" || code == "rest_day" => Notice::what_is_so(
+            "A Shutdown Delay is used on a Workday, until 30 minutes after Shutdown Time.",
+        ),
+        Ok(Some(code)) if code == "ritual_already_completed" => {
+            Notice::what_is_so("Shutdown is already complete. The evening stands.")
         }
         Ok(Some(code)) if code == "no_shutdown_time" => {
             Notice::what_is_so("Set a Shutdown Time first.")

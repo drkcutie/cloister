@@ -209,8 +209,10 @@ fn sign_in_with_state(tx: &mut Transaction, scenario: &str, initial_state: &Valu
         tx.execute(
             "insert into public.settings
                (user_id, workdays, workday_start, shutdown_time, pending_workdays,
-                pending_workday_start, pending_shutdown_time, pending_effective_at)
-             values ($1::text::uuid, $2, $3, $4, $5, $6, $7, $8::text::timestamptz)",
+                pending_workday_start, pending_shutdown_time, pending_effective_at,
+                settings_since)
+             values ($1::text::uuid, $2, $3, $4, $5, $6, $7, $8::text::timestamptz,
+                     $9::text::timestamptz)",
             &[
                 &user_id,
                 &days(&settings.workdays),
@@ -219,6 +221,21 @@ fn sign_in_with_state(tx: &mut Transaction, scenario: &str, initial_state: &Valu
                 &pending.map(|p| days(&p.workdays)),
                 &pending.map(|p| p.workday_start.clone()),
                 &pending.map(|p| p.shutdown_time.clone()),
+                &pending.map(|p| p.effective_at.to_rfc3339()),
+                &state.settings_since.map(|t| t.to_rfc3339()),
+            ],
+        )
+        .unwrap();
+    }
+    if let Some(target) = &state.weekly_target {
+        let pending = state.pending_weekly_target.as_ref();
+        tx.execute(
+            "insert into public.weekly_targets (user_id, hours, pending_hours, pending_effective_at)
+             values ($1::text::uuid, $2::int::smallint, $3::int::smallint, $4::text::timestamptz)",
+            &[
+                &user_id,
+                &i32::from(target.hours),
+                &pending.map(|p| i32::from(p.hours)),
                 &pending.map(|p| p.effective_at.to_rfc3339()),
             ],
         )

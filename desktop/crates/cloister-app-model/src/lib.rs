@@ -15,6 +15,8 @@ mod hold;
 mod notice;
 mod onboarding;
 mod ritual;
+mod scoreboard;
+mod settings;
 mod today;
 
 pub use begin::{BeginForm, Length, Missing};
@@ -34,6 +36,8 @@ pub use onboarding::{
 };
 pub use ritual::{
     deep_hours_this_week, shutdown_delay, shutdown_warning, use_shutdown_delay, DelayView, Review,
-    ReviewSession, RitualFlow, RitualStep, ShutdownWarning,
+    ReviewSession, RitualFlow, RitualStep, ShutdownWarning, DEFAULT_WEEKLY_TARGET,
 };
+pub use scoreboard::{deep_hours_figure, scoreboard, DayBar, Record, RecordKind, Scoreboard};
+pub use settings::{pending_changes, weekday_names, SettingsForm};
 pub use today::{ActiveSession, RatingPrompt, Summary, Today, View, WorkdayEnded};

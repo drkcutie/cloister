@@ -1,0 +1,92 @@
+{
+  "name": "weekly-review-on-the-last-workday",
+  "description": "The ritual of the last Workday of an ISO week needs the Weekly Review, which sets next week's target (here lower, so it waits for Monday); on other days a target is refused.",
+  "initial_state": {
+    "blocks": [],
+    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+    "weekly_target": { "hours": 20 },
+    "day_plans": [
+      {
+        "date": "2026-01-09", "starts_at": "2026-01-09T09:00:00Z", "ends_at": "2026-01-09T17:00:00Z",
+        "planned_deep_minutes": 480,
+        "slots": [{ "id": "f1", "starts_at": "2026-01-09T09:00:00Z", "ends_at": "2026-01-09T17:00:00Z", "label": "Write", "deep": true }]
+      },
+      {
+        "date": "2026-01-12", "starts_at": "2026-01-12T09:00:00Z", "ends_at": "2026-01-12T17:00:00Z",
+        "planned_deep_minutes": 480,
+        "slots": [{ "id": "m1", "starts_at": "2026-01-12T09:00:00Z", "ends_at": "2026-01-12T17:00:00Z", "label": "Write", "deep": true }]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-08T17:01:00Z",
+      "command": { "type": "capture_loose_end", "loose_end_id": "l1", "text": "Book the train" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-08T17:02:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete", "weekly_target": 15 },
+      "expect": { "outcome": "rejected", "reason": "weekly_review_not_due" }
+    },
+    {
+      "server_time": "2026-01-08T17:02:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete" },
+      "expect": { "outcome": "accepted", "enforcement": { "ritual": "completed" } }
+    },
+    {
+      "server_time": "2026-01-09T17:01:00Z",
+      "command": { "type": "capture_loose_end", "loose_end_id": "l2", "text": "Answer Ana" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-09T17:02:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete" },
+      "expect": { "outcome": "rejected", "reason": "weekly_review_required" }
+    },
+    {
+      "server_time": "2026-01-09T17:03:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete", "weekly_target": 0 },
+      "expect": { "outcome": "rejected", "reason": "invalid_weekly_target" }
+    },
+    {
+      "server_time": "2026-01-09T17:04:00Z",
+      "command": { "type": "complete_ritual", "typed": "shutdown complete", "weekly_target": 15 },
+      "expect": { "outcome": "rejected", "reason": "confirmation_mismatch" }
+    },
+    {
+      "server_time": "2026-01-09T17:05:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete", "weekly_target": 15 },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+          "weekly_target": { "hours": 20 },
+          "pending_weekly_target": { "hours": 15, "effective_at": "2026-01-12T00:00:00Z" },
+          "day_plans": [
+            {
+              "date": "2026-01-09", "starts_at": "2026-01-09T09:00:00Z", "ends_at": "2026-01-09T17:00:00Z",
+              "planned_deep_minutes": 480,
+              "slots": [{ "id": "f1", "starts_at": "2026-01-09T09:00:00Z", "ends_at": "2026-01-09T17:00:00Z", "label": "Write", "deep": true }]
+            },
+            {
+              "date": "2026-01-12", "starts_at": "2026-01-12T09:00:00Z", "ends_at": "2026-01-12T17:00:00Z",
+              "planned_deep_minutes": 480,
+              "slots": [{ "id": "m1", "starts_at": "2026-01-12T09:00:00Z", "ends_at": "2026-01-12T17:00:00Z", "label": "Write", "deep": true }]
+            }
+          ],
+          "loose_ends": [
+            { "id": "l1", "text": "Book the train", "captured_at": "2026-01-08T17:01:00Z" },
+            { "id": "l2", "text": "Answer Ana", "captured_at": "2026-01-09T17:01:00Z" }
+          ],
+          "rituals": [
+            { "date": "2026-01-08", "completed_at": "2026-01-08T17:02:00Z" },
+            { "date": "2026-01-09", "completed_at": "2026-01-09T17:05:00Z" }
+          ]
+        },
+        "enforcement": { "ritual": "completed" }
+      }
+    }
+  ]
+}

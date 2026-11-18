@@ -219,6 +219,11 @@ impl Cloister {
         self.blocklists.view()
     }
 
+    /// This Device's account, when signed in.
+    pub fn account(&self) -> Option<&Device> {
+        self.account.as_ref()
+    }
+
     pub fn signed_in(&self) -> bool {
         self.account.is_some()
     }

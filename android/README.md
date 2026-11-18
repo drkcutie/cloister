@@ -6,7 +6,7 @@ Kotlin + Jetpack Compose (ADR 0003). Three Gradle modules:
 | --- | --- | --- |
 | `core` (JVM) | Rules engine (same interface as `cloister-core`: `RulesEngine.decide` / `enforcement`, JSON forms, reason codes), the tighten-only `MirrorMerge`, and the VPN's `DnsFilter`. Loads [`shared/blocklists.json`](../shared/blocklists.json) from the classpath. | `./gradlew :core:test` runs every shared scenario in [`fixtures/rules`](../fixtures/README.md) in place (Seam A), plus DNS packet and merge tests. CI: `.github/workflows/android.yml`. |
 | `sync` (JVM) | supabase-kt `Device`: sign-in (magic link + code, Google ID token), Device registration, commands via `rpc/command`, `rpc/state` pulled into a JSON mirror (enforced offline), Realtime, Breaches queued offline. | `backend/scripts/test.sh` runs `:sync:test` (two phones on one account) against the local Supabase. |
-| `app` | `FilterVpn` (DNS-only VPN), `AppWatcher` (Accessibility: blocked-app overlay, lock overlay, uninstall guard), `AdminReceiver` (Device Admin / Device Owner), `Enforcer`, Compose screens. | `scripts/smoke-test.sh` (Seam B, emulator). |
+| `app` | `FilterVpn` (DNS-only VPN), `AppWatcher` (Accessibility: blocked-app overlay, lock overlay, Shutdown Ritual overlay, uninstall guard), `AdminReceiver` (Device Admin / Device Owner), `Enforcer`, Compose screens. | `scripts/smoke-test.sh` (Seam B, emulator), `scripts/ritual-test.sh` (Shutdown Ritual, emulator). |
 
 ## Build
 
@@ -32,10 +32,22 @@ minSdk 26.
   screen and Cloister's uninstall dialog. Hardcore Mode (Device Owner via
   `adb shell dpm set-device-owner dev.cloister/.app.enforce.AdminReceiver`, no accounts on the phone) adds
   always-on VPN with lockdown, no VPN/Private DNS changes, and `setUninstallBlocked` during Blocks.
+- **Shutdown Ritual:** while `enforcement.ritual` is `Due`, everything but Cloister, the dialers and the emergency
+  dialer is covered by the ritual overlay ("Open the Shutdown Ritual", "Emergency call"). Cloister opens on a
+  compact flow: Loose Ends, review today (Deep Hours against the target), tomorrow's Schedule-filled draft, a
+  contiguous Day Plan editor (always covers the Workday), the Weekly Review on the last Workday, and
+  "Shutdown complete" with a hold. Steps are gated by `RulesEngine.decide(CompleteRitual)` locally; completing
+  sends `complete_ritual`. "Delay 30 min (N left this week)" is on the ritual and on Today.
+- **Week tab:** the Deep Hours well, deep minutes by day, the depth trend and the week's records, from
+  `Review.weekSummary`. No percentages, no streaks.
 - Sideloaded APKs on Android 13+ need "Allow restricted settings" in App info before Accessibility can be enabled.
 
 Debug builds are `testOnly` (Device Owner can be removed with `dpm remove-active-admin`) and carry a
-`DebugReceiver` for the smoke test (password sign-in against the local stack).
+`DebugReceiver` for the emulator scripts (password sign-in against the local stack).
+
+`scripts/ritual-test.sh` (throwaway AVD on its own port, deleted afterwards; needs the local stack and the shared
+lock) makes the ritual due by backdating `settings_since` as the database owner, then checks the overlay, the
+emergency dialer, the flow's steps and that completing lifts the overlay. Set `SHOTS=dir` for screenshots.
 
 ## Onboarding
 
