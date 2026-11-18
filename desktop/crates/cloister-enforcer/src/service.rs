@@ -114,11 +114,14 @@ impl<P: Platform, C: Clock> Service<P, C> {
     }
 }
 
-/// Only commands that can make enforcement stricter are accepted locally. Anything that
-/// could loosen it goes through the backend, which applies it tomorrow (ADR 0001).
+/// Only commands that can't loosen enforcement are accepted locally: those that make it
+/// stricter, and records such as a Depth Rating that don't touch it. Anything that could
+/// loosen it goes through the backend, which applies it tomorrow (ADR 0001).
 fn tightens(command: &Command) -> bool {
     match command {
-        Command::StartBlock { .. } | Command::ExtendBlock { .. } => true,
+        Command::StartBlock { .. }
+        | Command::ExtendBlock { .. }
+        | Command::RecordDepthRating { .. } => true,
         Command::CancelBlock { .. } => false,
     }
 }

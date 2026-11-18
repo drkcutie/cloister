@@ -98,6 +98,7 @@ fn start_block(minutes: i64) -> Command {
         blocklists: vec![],
         confirm_long: false,
         client_time: None,
+        intent: Some("Write the report".into()),
     }
 }
 
@@ -219,4 +220,28 @@ fn every_tick_reapplies_and_the_block_ends_on_time() {
     r.service.lock().unwrap().tick();
     assert!(r.platform.last().blocked_domains.is_empty());
     assert!(!r.domains.read().unwrap().is_blocked("youtube.com"));
+}
+
+#[test]
+fn a_depth_rating_is_recorded_over_ipc_after_the_deep_session_ends() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T09:00:00Z");
+    let r = start(&dir, &clock);
+    send(&r, start_block(60));
+    clock.advance(Duration::minutes(60));
+
+    let rate = send(
+        &r,
+        Command::RecordDepthRating {
+            block_id: "b1".into(),
+            rating: 4,
+        },
+    );
+    assert!(matches!(rate, Response::Accepted { .. }), "{rate:?}");
+
+    let Response::Status { blocks, .. } = ipc::send(&r.socket, &Request::Status).unwrap() else {
+        panic!()
+    };
+    assert_eq!(blocks[0].depth_rating, Some(4));
+    assert_eq!(blocks[0].intent.as_deref(), Some("Write the report"));
 }

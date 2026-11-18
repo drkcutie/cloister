@@ -89,6 +89,7 @@ fn run(args: &[String]) -> Result<(), String> {
                 blocklists: f.blocklists,
                 confirm_long: f.confirm_long,
                 client_time: Some(Utc::now()),
+                intent: None,
             },
         },
         ["block", "extend"] => Request::Command {
