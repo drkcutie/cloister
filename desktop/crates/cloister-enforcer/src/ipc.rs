@@ -1,10 +1,11 @@
-//! Local IPC: one JSON request per line over a Unix socket, one JSON response per line back.
+//! Local IPC: one JSON request per line over a Unix socket (AF_UNIX on Windows too), one JSON
+//! response per line back.
 //!
 //! The socket is world-writable on purpose: the service only accepts commands and syncs that
 //! tighten enforcement, so any local user may start a Block but nobody can end one.
 
 use std::io::{self, BufRead, BufReader, Write};
-use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -16,6 +17,8 @@ use cloister_core::{
     Schedule, Settings, ShutdownDelay, State,
 };
 use serde::{Deserialize, Serialize};
+#[cfg(windows)]
+use uds_windows::{UnixListener, UnixStream};
 
 use crate::service::{Clock, Platform, Service};
 
@@ -123,6 +126,13 @@ impl Planning {
     }
 }
 
+/// Where the installed service listens.
+#[cfg(not(windows))]
+pub const DEFAULT_SOCKET: &str = "/var/run/cloister.sock";
+/// Where the installed service listens.
+#[cfg(windows)]
+pub const DEFAULT_SOCKET: &str = crate::windows::SOCKET_PATH;
+
 /// Serve `service` on a Unix socket at `path` on a background thread.
 pub fn serve<P, C>(path: &Path, service: Arc<Mutex<Service<P, C>>>) -> io::Result<()>
 where
@@ -134,7 +144,20 @@ where
         _ => {}
     }
     let listener = UnixListener::bind(path)?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o666))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o666))?;
+    }
+    // Windows: connecting needs write access to the socket file; grant it to signed-in users
+    // (not delete, and nothing else in the service's directory).
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("icacls")
+            .arg(path)
+            .args(["/grant", "*S-1-5-11:(R,W)"])
+            .output();
+    }
     thread::Builder::new().name("ipc".into()).spawn(move || {
         for stream in listener.incoming().flatten() {
             let service = Arc::clone(&service);

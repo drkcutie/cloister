@@ -46,6 +46,7 @@ impl Clock for TrustedClock {
 }
 
 /// Time since boot, including sleep.
+#[cfg(unix)]
 fn monotonic() -> Duration {
     #[cfg(target_os = "macos")]
     const CLOCK: libc::clockid_t = libc::CLOCK_MONOTONIC; // counts through sleep on macOS
@@ -58,6 +59,15 @@ fn monotonic() -> Duration {
     // SAFETY: `ts` is a valid, writable timespec.
     unsafe { libc::clock_gettime(CLOCK, &mut ts) };
     Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32)
+}
+
+/// Time since boot, including sleep (GetTickCount64 counts through sleep and hibernation).
+#[cfg(windows)]
+fn monotonic() -> Duration {
+    // SAFETY: no preconditions.
+    Duration::from_millis(unsafe {
+        windows_sys::Win32::System::SystemInformation::GetTickCount64()
+    })
 }
 
 #[cfg(test)]

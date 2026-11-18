@@ -79,7 +79,7 @@ fn run(args: &[String]) -> Result<(), String> {
         .socket
         .clone()
         .or_else(|| std::env::var_os("CLOISTER_SOCKET").map(PathBuf::from))
-        .unwrap_or_else(|| "/var/run/cloister.sock".into());
+        .unwrap_or_else(|| cloister_enforcer::ipc::DEFAULT_SOCKET.into());
     let request = match verb.as_slice() {
         ["block", "start"] => Request::Command {
             command: Command::StartBlock {

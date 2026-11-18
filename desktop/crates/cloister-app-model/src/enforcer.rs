@@ -19,12 +19,12 @@ impl SocketEnforcer {
         SocketEnforcer { path: path.into() }
     }
 
-    /// `$CLOISTER_SOCKET`, or the installed service's `/var/run/cloister.sock`.
+    /// `$CLOISTER_SOCKET`, or the installed service's socket ([`cloister_enforcer::ipc::DEFAULT_SOCKET`]).
     pub fn from_env() -> Self {
         Self::new(
             std::env::var_os("CLOISTER_SOCKET")
                 .map(PathBuf::from)
-                .unwrap_or_else(|| "/var/run/cloister.sock".into()),
+                .unwrap_or_else(|| cloister_enforcer::ipc::DEFAULT_SOCKET.into()),
         )
     }
 

@@ -74,6 +74,92 @@ pub fn processes_to_quit(
     pids
 }
 
+/// Executable names (lower case, without `.exe`) that are never quit on Linux and Windows,
+/// whatever the Blocklists say: the session itself and Cloister.
+const PROTECTED_NAMES: &[&str] = &[
+    // Linux
+    "init",
+    "systemd",
+    "xorg",
+    "xwayland",
+    "gnome-shell",
+    "kwin_wayland",
+    "kwin_x11",
+    "plasmashell",
+    "sway",
+    "mutter",
+    "gdm",
+    "sddm",
+    "login",
+    "dbus-daemon",
+    // Windows
+    "system",
+    "system idle process",
+    "smss",
+    "csrss",
+    "wininit",
+    "winlogon",
+    "services",
+    "lsass",
+    "svchost",
+    "explorer",
+    "dwm",
+    "taskmgr",
+    "conhost",
+];
+
+/// The name an executable path is matched by on Linux and Windows: its file name, without a
+/// `.exe` extension, in lower case. Handles both `/` and `\` separators.
+pub fn executable_name(executable: &str) -> String {
+    let file = executable.rsplit(['/', '\\']).next().unwrap_or(executable);
+    let lower = file.to_lowercase();
+    lower.strip_suffix(".exe").unwrap_or(&lower).to_string()
+}
+
+/// The pids to force-quit on Linux and Windows, where apps have no bundle identifier. A blocked
+/// entry matches an executable named like the entry or like the entry's last dot-separated
+/// segment, ignoring case: `com.hnc.Discord` and `Discord` both match `Discord.exe` and
+/// `/usr/share/discord/Discord`. The session and Cloister itself are never quit.
+pub fn processes_to_quit_by_name(processes: &[Process], blocked_apps: &[String]) -> Vec<u32> {
+    let mut names = BTreeSet::new();
+    for entry in blocked_apps {
+        let entry = entry.to_lowercase();
+        if let Some((_, last)) = entry.rsplit_once('.') {
+            if !last.is_empty() {
+                names.insert(last.to_string());
+            }
+        }
+        names.insert(entry);
+    }
+    processes
+        .iter()
+        .filter(|p| p.pid > 1)
+        .filter(|p| {
+            let name = executable_name(&p.executable);
+            !PROTECTED_NAMES.contains(&name.as_str())
+                && !name.starts_with("cloister")
+                && names.contains(&name)
+        })
+        .map(|p| p.pid)
+        .collect()
+}
+
+/// Parse `tasklist /fo csv /nh` output: image name and pid of every process.
+pub fn parse_tasklist_csv(output: &str) -> Vec<Process> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.trim().split("\",\"");
+            let image = fields.next()?.trim_start_matches('"');
+            let pid = fields.next()?.parse().ok()?;
+            Some(Process {
+                pid,
+                executable: image.to_string(),
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,5 +221,78 @@ mod tests {
     fn nothing_is_quit_when_no_app_is_blocked() {
         assert!(processes_to_quit(&parse_ps(PS), &[], ids).is_empty());
         assert!(processes_to_quit(&parse_ps(PS), &blocked(&["Zoom"]), ids).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod by_name_tests {
+    use super::*;
+
+    fn blocked(apps: &[&str]) -> Vec<String> {
+        apps.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn p(pid: u32, exe: &str) -> Process {
+        Process {
+            pid,
+            executable: exe.into(),
+        }
+    }
+
+    #[test]
+    fn a_linux_executable_matches_an_entry_or_its_last_bundle_id_segment() {
+        let procs = [
+            p(10, "/usr/share/discord/Discord"),
+            p(11, "/usr/lib/slack/slack"),
+            p(12, "/usr/bin/steam"),
+            p(13, "/usr/bin/firefox"),
+        ];
+        let pids =
+            processes_to_quit_by_name(&procs, &blocked(&["com.hnc.Discord", "com.Slack", "Steam"]));
+        assert_eq!(pids, [10, 11, 12]);
+    }
+
+    #[test]
+    fn a_windows_image_name_matches_without_its_exe_extension() {
+        let procs = [
+            p(4, r"C:\Users\me\AppData\Local\Discord\app-1.0\Discord.exe"),
+            p(5, "Teams.exe"),
+            p(6, "notepad.exe"),
+        ];
+        let pids = processes_to_quit_by_name(&procs, &blocked(&["discord", "com.microsoft.teams"]));
+        assert_eq!(pids, [4, 5]);
+    }
+
+    #[test]
+    fn the_system_and_cloister_are_never_quit_by_name() {
+        let procs = [
+            p(1, "/sbin/init"),
+            p(2, "/usr/bin/gnome-shell"),
+            p(3, r"C:\Windows\explorer.exe"),
+            p(7, "winlogon.exe"),
+            p(8, "/usr/local/bin/cloister-app"),
+            p(9, r"C:\Program Files\Cloister\cloisterd.exe"),
+        ];
+        let pids = processes_to_quit_by_name(
+            &procs,
+            &blocked(&[
+                "init",
+                "gnome-shell",
+                "explorer",
+                "winlogon",
+                "cloister-app",
+                "cloisterd",
+            ]),
+        );
+        assert!(pids.is_empty(), "{pids:?}");
+    }
+
+    #[test]
+    fn parses_proc_entries_and_tasklist_csv() {
+        let csv = "\"System Idle Process\",\"0\",\"Services\",\"0\",\"8 K\"\r\n\"Discord.exe\",\"4242\",\"Console\",\"1\",\"120,000 K\"\r\n";
+        assert_eq!(
+            parse_tasklist_csv(csv),
+            [p(0, "System Idle Process"), p(4242, "Discord.exe")]
+        );
     }
 }
