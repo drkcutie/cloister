@@ -1,0 +1,3 @@
+# Unbreakable rules are enforced in the backend, not only in clients
+
+The backend is Supabase (Postgres, auth, realtime). The rules that make Cloister binding are Postgres constraints and triggers, not just checks in the app: a Block's end can never move earlier, Planned Deep Minutes only go up, Blocklist removals and other loosening changes take effect tomorrow, and only one Shutdown Delay is allowed per week. Clients cache state and enforce it offline, but the server's version is the one that counts. That way a modified client, or a Device with its clock changed, can't undo a commitment made on another Device.

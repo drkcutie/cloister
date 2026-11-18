@@ -1,0 +1,3 @@
+# GPUI desktop app and a separate native Android app
+
+The desktop app is Rust + GPUI (macOS, Windows, Linux). The phone app is native Kotlin and covers Android only, with no iOS. We didn't use one cross-platform UI framework (Flutter, Tauri, React Native) because enforcement needs deep, platform-specific hooks anyway: root services on desktop, and VpnService, AccessibilityService and Device Owner on Android. GPUI gives a fast native desktop UI that shares a Rust `core` with the enforcement service. The rules for what is blocked at a given moment are written twice, in Rust and in Kotlin, and are kept in step by shared JSON test fixtures.
