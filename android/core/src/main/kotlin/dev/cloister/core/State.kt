@@ -27,6 +27,12 @@ data class State(
     val settings: Settings? = null,
     /** Requested settings that loosen something, waiting for the next day boundary. */
     val pendingSettings: PendingSettings? = null,
+    /** Open Loose Ends, sorted by capture then id. */
+    val looseEnds: List<LooseEnd> = emptyList(),
+    /** Completed Shutdown Rituals, sorted by date. */
+    val rituals: List<Ritual> = emptyList(),
+    /** Shutdown Delays used, sorted by date. */
+    val shutdownDelays: List<ShutdownDelay> = emptyList(),
 ) {
     fun toJson(): JsonObject = obj(
         "blocks" to arr(blocks) { it.toJson() },
@@ -39,6 +45,9 @@ data class State(
         "breaches" to nonEmpty(breaches) { arr(it) { b -> b.toJson() } },
         "settings" to settings?.toJson(),
         "pending_settings" to pendingSettings?.toJson(),
+        "loose_ends" to nonEmpty(looseEnds) { arr(it) { l -> l.toJson() } },
+        "rituals" to nonEmpty(rituals) { arr(it) { r -> r.toJson() } },
+        "shutdown_delays" to nonEmpty(shutdownDelays) { arr(it) { d -> d.toJson() } },
     )
 
     companion object {
@@ -54,6 +63,9 @@ data class State(
                 breaches = objects("breaches", emptyList(), Breach::fromJson),
                 settings = obj("settings", Settings::fromJson),
                 pendingSettings = obj("pending_settings", PendingSettings::fromJson),
+                looseEnds = objects("loose_ends", emptyList(), LooseEnd::fromJson),
+                rituals = objects("rituals", emptyList(), Ritual::fromJson),
+                shutdownDelays = objects("shutdown_delays", emptyList(), ShutdownDelay::fromJson),
             ).also { done() }
         }
     }

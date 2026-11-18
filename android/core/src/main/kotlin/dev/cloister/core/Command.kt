@@ -135,6 +135,26 @@ sealed interface Command {
         )
     }
 
+    /** Add a Loose End (text trimmed, 1 to 500 characters). */
+    data class CaptureLooseEnd(val looseEndId: String, val text: String) : Command {
+        override fun toJson() = obj("type" to str("capture_loose_end"), "loose_end_id" to str(looseEndId), "text" to str(text))
+    }
+
+    /** Close a Loose End: it leaves the list. */
+    data class CloseLooseEnd(val looseEndId: String) : Command {
+        override fun toJson() = obj("type" to str("close_loose_end"), "loose_end_id" to str(looseEndId))
+    }
+
+    /** Postpone today's ritual and Evening Lockdown by 30 minutes, once per ISO week. */
+    data object UseShutdownDelay : Command {
+        override fun toJson() = obj("type" to str("use_shutdown_delay"))
+    }
+
+    /** Complete the due Shutdown Ritual; [typed] must be exactly "Shutdown complete". */
+    data class CompleteRitual(val typed: String) : Command {
+        override fun toJson() = obj("type" to str("complete_ritual"), "typed" to str(typed))
+    }
+
     companion object {
         fun fromJson(el: JsonElement): Command {
             val type = ((el as? JsonObject)?.get("type") as? JsonPrimitive)?.content
@@ -181,6 +201,10 @@ sealed interface Command {
                         string("schedule_id"), string("time_zone"), objects("weekdays", read = ::weekday),
                         string("starts"), string("ends"), objects("slots", read = ScheduleSlot::fromJson),
                     )
+                    "capture_loose_end" -> CaptureLooseEnd(string("loose_end_id"), string("text"))
+                    "close_loose_end" -> CloseLooseEnd(string("loose_end_id"))
+                    "use_shutdown_delay" -> UseShutdownDelay
+                    "complete_ritual" -> CompleteRitual(string("typed"))
                     else -> throw JsonFormException("unknown command type `$type`")
                 }.also { done() }
             }
@@ -240,7 +264,19 @@ enum class Reason(val code: String) {
     EveningLockdown("evening_lockdown"),
     RestDay("rest_day"),
     InvalidSettings("invalid_settings"),
-    TimeZoneCannotChange("time_zone_cannot_change");
+    TimeZoneCannotChange("time_zone_cannot_change"),
+    InvalidLooseEnd("invalid_loose_end"),
+    DuplicateLooseEnd("duplicate_loose_end"),
+    UnknownLooseEnd("unknown_loose_end"),
+    NoShutdownTime("no_shutdown_time"),
+    ShutdownDelayUsed("shutdown_delay_used"),
+    RitualNotDue("ritual_not_due"),
+    RitualAlreadyCompleted("ritual_already_completed"),
+    LooseEndRequired("loose_end_required"),
+    DayPlanRequired("day_plan_required"),
+    DeepSlotRequired("deep_slot_required"),
+    WorkdayNotCovered("workday_not_covered"),
+    ConfirmationMismatch("confirmation_mismatch");
 
     companion object {
         /** The Reason for a code, or null for a code only the backend uses. */

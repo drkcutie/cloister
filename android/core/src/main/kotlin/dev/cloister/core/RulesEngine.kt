@@ -110,6 +110,10 @@ object RulesEngine {
             DayPlans.writeDayPlan(state, command.date, command.startsAt, command.endsAt, command.slots, now)
         is Command.PutSchedule -> DayPlans.putSchedule(state, command, now)
         is Command.ChangeSettings -> WorkdaySettings.changeSettings(state, command, now)
+        is Command.CaptureLooseEnd -> Rituals.captureLooseEnd(state, command.looseEndId, command.text, now)
+        is Command.CloseLooseEnd -> Rituals.closeLooseEnd(state, command.looseEndId)
+        is Command.UseShutdownDelay -> Rituals.useShutdownDelay(state, now)
+        is Command.CompleteRitual -> Rituals.completeRitual(state, command.typed, now)
     }
 
     /** A Deep Session is a deep Block or a deep Slot of a saved Day Plan. */
@@ -162,7 +166,7 @@ object RulesEngine {
             apps += Blocklists.effectiveEntries(state, list, EntryKind.App, serverTime)
         }
         domains += domains.flatMap { Catalog.builtin.related(it) }
-        return Enforcement(domains.toList(), apps.toList(), RitualScreen.None)
+        return Enforcement(domains.toList(), apps.toList(), Rituals.screen(state, serverTime))
     }
 
     /** The active Block or planned Deep Session to show (the one ending last), if any. */

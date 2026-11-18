@@ -85,7 +85,8 @@ object WorkdaySettings {
         if (!settings.isWorkday(local.toLocalDate())) return Lockdown.RestDay
         val (start, shutdown) = settings.times()
         val t = local.toLocalTime()
-        return if (t.isBefore(start) || !t.isBefore(shutdown)) Lockdown.EveningLockdown else null
+        val afterShutdown = !t.isBefore(shutdown) && !Rituals.delayHoldsLockdown(state, local.toLocalDateTime(), shutdown)
+        return if (t.isBefore(start) || afterShutdown) Lockdown.EveningLockdown else null
     }
 
     private fun local(state: State, date: LocalDate, time: LocalTime): Instant =
