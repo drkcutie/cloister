@@ -62,8 +62,16 @@ object DayPlans {
         return if (h <= 23 && m <= 59) LocalTime.of(h, m) else null
     }
 
-    private fun planInForce(state: State, date: LocalDate, now: Instant): DayPlan? =
-        saved(state, date) ?: schedulePlan(state, date)?.takeIf { !it.startsAt.isAfter(now) }
+    /**
+     * The plan in force for [date] at [now]: the saved one, or the Schedule's once its day has begun
+     * in the Schedule's time zone (from local midnight on, the day's deep time can only grow).
+     */
+    private fun planInForce(state: State, date: LocalDate, now: Instant): DayPlan? {
+        saved(state, date)?.let { return it }
+        val schedule = state.schedules.firstOrNull { date.dayOfWeek.value in it.weekdays } ?: return null
+        val zone = Blocklists.zone(schedule.timeZone) ?: return null
+        return if (!now.atZone(zone).toLocalDate().isBefore(date)) schedulePlanOf(schedule, date) else null
+    }
 
     /** The Deep Session a deep Slot becomes. */
     fun deepSession(slot: Slot, blocklists: List<String>) = Block(
@@ -166,17 +174,6 @@ object DayPlans {
         if (state.schedules.any { it.id != cmd.scheduleId && it.weekdays.any(days::contains) }) {
             throw Rejection(Reason.SchedulesOverlap)
         }
-        var dayPlans = state.dayPlans
-        // A day already running on the old Schedule keeps its plan, saved as that day's Day Plan.
-        state.schedules.firstOrNull { it.id == cmd.scheduleId }?.let { old ->
-            val zone = Blocklists.zone(old.timeZone) ?: return@let
-            val today = now.atZone(zone).toLocalDate()
-            if (today.dayOfWeek.value in old.weekdays && saved(state, today) == null) {
-                schedulePlanOf(old, today)?.takeIf { !it.startsAt.isAfter(now) && now.isBefore(it.endsAt) }?.let {
-                    dayPlans = (dayPlans + it).sortedBy { p -> p.date }
-                }
-            }
-        }
         val schedule = Schedule(
             id = cmd.scheduleId,
             timeZone = cmd.timeZone,
@@ -185,6 +182,22 @@ object DayPlans {
             ends = cmd.ends,
             slots = slots.map { (_, s) -> ScheduleSlot(s.starts, s.ends, s.label.trim(), s.deep) },
         )
+        var dayPlans = state.dayPlans
+        // A change takes effect from the next day: a day already running on the old Schedule keeps its
+        // plan, and so does today before its start if the change would cut its deep time. The kept plan
+        // is saved as that day's Day Plan.
+        state.schedules.firstOrNull { it.id == cmd.scheduleId }?.let { old ->
+            val zone = Blocklists.zone(old.timeZone) ?: return@let
+            val today = now.atZone(zone).toLocalDate()
+            val weekday = today.dayOfWeek.value
+            if (weekday !in old.weekdays || saved(state, today) != null) return@let
+            val plan = schedulePlanOf(old, today) ?: return@let
+            val newMinutes = (if (weekday in schedule.weekdays) schedulePlanOf(schedule, today) else null)
+                ?.plannedDeepMinutes ?: 0
+            val running = !plan.startsAt.isAfter(now)
+            val cut = newMinutes < plan.plannedDeepMinutes
+            if (now.isBefore(plan.endsAt) && (running || cut)) dayPlans = (dayPlans + plan).sortedBy { p -> p.date }
+        }
         val schedules = (state.schedules.filter { it.id != cmd.scheduleId } + schedule).sortedBy { it.id }
         return state.copy(dayPlans = dayPlans, schedules = schedules)
     }

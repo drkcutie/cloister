@@ -90,7 +90,7 @@ class AppWatcher : AccessibilityService() {
 
     /** Leaves the screens that would take Cloister off the phone while a Block runs. */
     private fun guard(pkg: String, cls: String) {
-        if (last.session == null) return
+        if (last.block == null) return
         val removing = cls.contains("DeviceAdminAdd") ||
             (pkg.endsWith("packageinstaller") && windowMentions("Cloister")) ||
             (pkg == "com.android.settings" && windowMentions("Cloister app blocker"))
@@ -147,14 +147,13 @@ class AppWatcher : AccessibilityService() {
             setContent {
                 val state = CloisterApp.instance.enforcer.now
                 val current = androidx.compose.runtime.produceState(now) { state.collect { value = it } }.value
-                val offset = current.serverTime.toEpochMilli() - System.currentTimeMillis()
                 when (kind) {
-                    Kind.BlockedApp -> BlockedAppOverlay(current.session, offset, current.lockdown, current.nextWorkdayStart) {
+                    Kind.BlockedApp -> BlockedAppOverlay(current.block, current.lockdown, current.nextWorkdayStart) {
                         performGlobalAction(GLOBAL_ACTION_HOME)
                         hideOverlay()
                     }
                     Kind.Lock -> LockOverlay(
-                        current.session, offset,
+                        current.block,
                         onTurnVpnOn = {
                             allowOwnAppUntil = SystemClock.elapsedRealtime() + 60_000
                             hideOverlay()

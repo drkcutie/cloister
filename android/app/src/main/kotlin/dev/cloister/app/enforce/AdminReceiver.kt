@@ -14,9 +14,9 @@ import dev.cloister.app.ui.Copy
  */
 class AdminReceiver : DeviceAdminReceiver() {
     override fun onDisableRequested(context: Context, intent: Intent): CharSequence {
-        val session = CloisterApp.instance.enforcer.now.value.session
-        return if (session != null) {
-            "A Block is running. Ends at ${Copy.clock(session.endsAt)}. Can't be cancelled."
+        val block = CloisterApp.instance.enforcer.now.value.block
+        return if (block != null) {
+            "A Block is running. Ends at ${Copy.clock(block.endsAt)}. Can't be cancelled."
         } else {
             "Without Device Admin, Cloister can be uninstalled during a Block."
         }

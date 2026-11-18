@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Shutdown warnings on time; without it they come within a minute. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!-- Package visibility: the app blocker matches any installed package by name. -->
     <queries>
@@ -95,5 +97,10 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- Shutdown warnings, 15 and 5 minutes before the ritual is due. -->
+        <receiver
+            android:name=".enforce.ShutdownWarningReceiver"
+            android:exported="false" />
     </application>
 </manifest>

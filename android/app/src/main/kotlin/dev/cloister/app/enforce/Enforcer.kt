@@ -14,6 +14,7 @@ import dev.cloister.core.Enforcement
 import dev.cloister.core.Lockdown
 import dev.cloister.core.WorkdaySettings
 import dev.cloister.core.RulesEngine
+import dev.cloister.core.TrustedClock
 import dev.cloister.sync.Device
 import java.time.Instant
 import kotlinx.coroutines.CoroutineScope
@@ -28,7 +29,7 @@ import kotlinx.coroutines.launch
 data class EnforcementNow(
     val enforcement: Enforcement = Enforcement(),
     /** The Block or planned Deep Session to show (Intent, time left), if any. */
-    val session: Block? = null,
+    val block: Block? = null,
     /** Evening Lockdown or a Rest Day, on the clock (null without settings or during work). */
     val lockdown: Lockdown? = null,
     /** When work is next allowed, while locked down. */
@@ -79,32 +80,35 @@ class Enforcer(private val context: Context, val device: Device, private val sco
 
     @Synchronized
     fun tick() {
+        // Trusted now (the phone's clock can't move it); the wall clock only ever adds enforcement.
         val serverTime = device.serverTime()
+        val wall = device.wallTime()
         val state = device.state()
-        val enforcement = RulesEngine.enforcement(state, serverTime)
-        val session = RulesEngine.activeSessions(state, serverTime)
+        val enforcement = TrustedClock.enforcement(state, serverTime, wall)
+        val block = RulesEngine.activeBlocks(state, serverTime)
             .sortedWith(compareBy({ it.quitSocial }, { -it.endsAt.epochSecond }))
             .firstOrNull()
-        val lockdown = WorkdaySettings.lockdown(state, serverTime)
+        val lockdown = TrustedClock.lockdown(state, serverTime, wall)
         FilterVpn.update(enforcement.blockedDomains)
         val dpm = context.getSystemService(DevicePolicyManager::class.java)
         val admin = AdminReceiver.component(context)
         val owner = dpm.isDeviceOwnerApp(context.packageName)
         val next = EnforcementNow(
             enforcement = enforcement,
-            session = session,
+            block = block,
             lockdown = lockdown,
-            nextWorkdayStart = lockdown?.let { WorkdaySettings.nextWorkdayStart(state, serverTime) },
+            nextWorkdayStart = lockdown?.let { WorkdaySettings.nextWorkdayStart(state, maxOf(serverTime, wall)) },
             serverTime = serverTime,
             vpnRunning = FilterVpn.running,
             appBlockerOn = AppWatcher.running,
             adminActive = dpm.isAdminActive(admin),
             deviceOwner = owner,
-            vpnOffDuringBlock = session != null && vpnWanted && !FilterVpn.running,
+            vpnOffDuringBlock = block != null && vpnWanted && !FilterVpn.running,
         )
         _now.value = next
+        ShutdownWarningAlarm.schedule(context, state, serverTime)
         AppWatcher.update(next)
-        if (owner) applyHardcore(dpm, admin, blockRunning = session != null)
+        if (owner) applyHardcore(dpm, admin, blockRunning = block != null)
         if (device.signedIn && syncJob == null) syncJob = device.startSync(scope)
         val enforcing = next.vpnRunning && next.appBlockerOn
         val reported = enforcing to owner
@@ -117,14 +121,14 @@ class Enforcer(private val context: Context, val device: Device, private val sco
 
     /** The system took the VPN away (the user turned it off, or another VPN started). */
     fun vpnRevoked() {
-        val running = _now.value.session != null
+        val running = _now.value.block != null
         if (running) scope.launch { device.recordBreach(BreachKind.VpnTurnedOff) }
         tick()
     }
 
     /** The user turned the Accessibility service off. */
     fun appBlockerStopped() {
-        if (_now.value.session != null) scope.launch { device.recordBreach(BreachKind.AppBlockerTurnedOff) }
+        if (_now.value.block != null) scope.launch { device.recordBreach(BreachKind.AppBlockerTurnedOff) }
         tick()
     }
 

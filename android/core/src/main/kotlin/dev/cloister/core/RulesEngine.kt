@@ -171,6 +171,6 @@ object RulesEngine {
     }
 
     /** The active Block or planned Deep Session to show (the one ending last), if any. */
-    fun activeSessions(state: State, now: Instant): List<Block> =
+    fun activeBlocks(state: State, now: Instant): List<Block> =
         (state.blocks + DayPlans.plannedDeepSessions(state, now)).filter { it.isActive(now) }
 }

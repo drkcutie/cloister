@@ -20,19 +20,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.cloister.app.CloisterApp
 import dev.cloister.core.Block
 import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.delay
 
-/** Ticks once a second (no animation), corrected to server time by [offsetMillis]. */
+/** Trusted now (server-anchored; the phone's clock can't move it), ticking once a second (no animation). */
 @Composable
-fun rememberNow(offsetMillis: Long): Instant {
-    var now by remember { mutableStateOf(Instant.now().plusMillis(offsetMillis)) }
-    LaunchedEffect(offsetMillis) {
+fun rememberNow(): Instant {
+    val device = CloisterApp.instance.device
+    var now by remember { mutableStateOf(device.serverTime()) }
+    LaunchedEffect(Unit) {
         while (true) {
-            now = Instant.now().plusMillis(offsetMillis)
-            delay(1000 - (System.currentTimeMillis() % 1000))
+            now = device.serverTime()
+            delay(1000 - (now.toEpochMilli() % 1000))
         }
     }
     return now
@@ -43,9 +45,9 @@ fun rememberNow(offsetMillis: Long): Instant {
  * left, and one way out (home).
  */
 @Composable
-fun BlockedAppOverlay(session: Block?, offsetMillis: Long, lockdown: dev.cloister.core.Lockdown? = null, nextWorkdayStart: Instant? = null, onHome: () -> Unit) {
+fun BlockedAppOverlay(block: Block?, lockdown: dev.cloister.core.Lockdown? = null, nextWorkdayStart: Instant? = null, onHome: () -> Unit) {
     val c = Day
-    val now = rememberNow(offsetMillis)
+    val now = rememberNow()
     CloisterTheme {
         Column(
             Modifier.fillMaxSize().background(c.ground).systemBarsPadding().padding(horizontal = 28.dp, vertical = 40.dp),
@@ -53,19 +55,19 @@ fun BlockedAppOverlay(session: Block?, offsetMillis: Long, lockdown: dev.cloiste
         ) {
             Masthead(
                 when {
-                    session?.deep == true -> "Deep Session"
-                    session != null -> "Block"
+                    block?.deep == true -> "Deep Session"
+                    block != null -> "Block"
                     lockdown == dev.cloister.core.Lockdown.RestDay -> "Rest Day"
                     else -> "Evening Lockdown"
                 },
             )
             Column(Modifier.widthIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 Text("This app is blocked.", style = Type.heading, color = c.ink2, modifier = Modifier.semantics { heading() })
-                session?.intent?.let { Text(it, style = Type.intent, color = c.ink) }
-                if (session == null && nextWorkdayStart != null) {
+                block?.intent?.let { Text(it, style = Type.intent, color = c.ink) }
+                if (block == null && nextWorkdayStart != null) {
                     Text("Work starts again at ${Copy.clock(nextWorkdayStart)}.", style = Type.body, color = c.ink2)
                 }
-                session?.let {
+                block?.let {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(Copy.countdown(Duration.between(now, it.endsAt)), style = Type.timer.copy(fontSize = Type.timer.fontSize * 0.78f), color = c.ink)
                         Text("Ends at ${Copy.clock(it.endsAt)}", style = Type.detail, color = c.ink2)
@@ -82,9 +84,9 @@ fun BlockedAppOverlay(session: Block?, offsetMillis: Long, lockdown: dev.cloiste
  * back is to turn the VPN on again. Emergency calls stay reachable.
  */
 @Composable
-fun LockOverlay(session: Block?, offsetMillis: Long, onTurnVpnOn: () -> Unit, onEmergencyCall: () -> Unit) {
+fun LockOverlay(block: Block?, onTurnVpnOn: () -> Unit, onEmergencyCall: () -> Unit) {
     val c = Night
-    val now = rememberNow(offsetMillis)
+    val now = rememberNow()
     CloisterTheme(night = true) {
         Column(
             Modifier.fillMaxSize().background(c.ground).systemBarsPadding().padding(horizontal = 28.dp, vertical = 40.dp),
@@ -97,7 +99,7 @@ fun LockOverlay(session: Block?, offsetMillis: Long, onTurnVpnOn: () -> Unit, on
                     "A Breach was recorded. Blocked sites and apps stay blocked until the Block ends.",
                     style = Type.body, color = c.ink2,
                 )
-                session?.let {
+                block?.let {
                     Text(Copy.countdown(Duration.between(now, it.endsAt)), style = Type.timer.copy(fontSize = Type.timer.fontSize * 0.78f), color = c.ink)
                     Text("Ends at ${Copy.clock(it.endsAt)}", style = Type.detail, color = c.ink2)
                 }
@@ -127,7 +129,7 @@ fun RitualOverlay(lockdown: dev.cloister.core.Lockdown?, nextWorkdayStart: Insta
             Column(Modifier.widthIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 Text("The workday has ended.", style = Type.display, color = c.ink, modifier = Modifier.semantics { heading() })
                 Text(
-                    "The Shutdown Ritual is due. Capture your Loose Ends and plan tomorrow; completing it here unlocks every Device.",
+                    "The Shutdown Ritual is due. Capture your Loose Ends and plan tomorrow. Completing it here unlocks every Device.",
                     style = Type.body, color = c.ink2,
                 )
                 if (lockdown == dev.cloister.core.Lockdown.EveningLockdown && nextWorkdayStart != null) {

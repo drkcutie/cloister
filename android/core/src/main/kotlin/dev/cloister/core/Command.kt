@@ -299,10 +299,17 @@ enum class Reason(val code: String) {
     ConfirmationMismatch("confirmation_mismatch"),
     InvalidWeeklyTarget("invalid_weekly_target"),
     WeeklyReviewRequired("weekly_review_required"),
-    WeeklyReviewNotDue("weekly_review_not_due");
+    WeeklyReviewNotDue("weekly_review_not_due"),
+
+    // Codes from the backend or an enforcement service, never from this engine.
+    /** The backend kept a looser value out (tighten-only). */
+    LooseningNotAccepted("loosening_not_accepted"),
+    NotSignedIn("not_signed_in"),
+    /** The backend couldn't read the command. */
+    InvalidCommand("invalid_command");
 
     companion object {
-        /** The Reason for a code, or null for a code only the backend uses. */
+        /** The Reason for a code, or null for a code this client doesn't know. */
         fun of(code: String) = entries.firstOrNull { it.code == code }
     }
 }

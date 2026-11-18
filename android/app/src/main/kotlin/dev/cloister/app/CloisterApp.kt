@@ -2,6 +2,7 @@ package dev.cloister.app
 
 import android.app.Application
 import android.os.Build
+import dev.cloister.app.enforce.AndroidClock
 import dev.cloister.app.enforce.Enforcer
 import dev.cloister.sync.Device
 import dev.cloister.sync.Mirror
@@ -24,7 +25,7 @@ class CloisterApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        val mirror = Mirror(File(filesDir, "mirror.json"))
+        val mirror = Mirror(File(filesDir, "mirror.json"), AndroidClock(contentResolver))
         val url = BuildConfig.API_URL
         val key = BuildConfig.ANON_KEY.ifEmpty { "not-configured" }
         device = Device(Device.client(url, key, mirror), mirror, Build.MODEL ?: "Android phone")

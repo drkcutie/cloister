@@ -5,7 +5,7 @@ import dev.cloister.core.Command
 import dev.cloister.core.Enforcement
 import dev.cloister.core.MirrorMerge
 import dev.cloister.core.Reason
-import dev.cloister.core.RulesEngine
+import dev.cloister.core.TrustedClock
 import dev.cloister.core.State
 import dev.cloister.core.parseInstant
 import io.github.jan.supabase.SupabaseClient
@@ -55,7 +55,7 @@ import kotlinx.serialization.json.put
 sealed interface CommandOutcome {
     data object Accepted : CommandOutcome
     data class Rejected(val reason: String) : CommandOutcome {
-        /** The engine's Reason, or null for a backend-only code (`invalid_command`...). */
+        /** The Reason for the code, or null for a code this client doesn't know. */
         val engineReason get() = Reason.of(reason)
     }
 }
@@ -86,10 +86,20 @@ class Device(
     val email: String? get() = supabase.auth.currentUserOrNull()?.email
 
     fun state(): State = mirror.state
+    /** Trusted now (server-anchored, monotonic; the phone's clock can't move it). */
     fun serverTime(): Instant = mirror.serverTime()
 
-    /** The Enforcement for now, by the best estimate of server time (works offline). */
-    fun enforcement(): Enforcement = RulesEngine.enforcement(mirror.state, mirror.serverTime())
+    /** The phone's wall clock; only ever used to enforce more. */
+    fun wallTime(): Instant = mirror.wallTime()
+
+    /**
+     * The Enforcement for now (works offline): at trusted now, united with the wall clock's when
+     * that is later, so a phone that was off still locks down and a changed clock lifts nothing.
+     */
+    fun enforcement(): Enforcement {
+        val trusted = mirror.serverTime()
+        return TrustedClock.enforcement(mirror.state, trusted, mirror.wallTime())
+    }
 
     // --- sign-in ---------------------------------------------------------------------------
 
@@ -182,12 +192,8 @@ class Device(
         }
         val serverNow = fetchServerNow()
         val before = mirror.state
-        mirror.update {
-            it.copy(
-                serverOffsetMillis = serverNow.toEpochMilli() - System.currentTimeMillis(),
-                state = MirrorMerge.merge(it.state, incoming, serverNow),
-            )
-        }
+        mirror.anchorServerTime(serverNow)
+        mirror.update { it.copy(state = MirrorMerge.merge(it.state, incoming, serverNow)) }
         val changed = mirror.state != before
         if (changed) bump()
         changed
@@ -253,17 +259,10 @@ class Device(
         }
     }
 
+    /** Reports this Device through the `device_heartbeat` RPC (the backend owns the `devices` rows). */
     private suspend fun register() {
         online {
-            supabase.postgrest.from("devices").upsert(
-                buildJsonObject {
-                    put("id", mirror.deviceId)
-                    put("name", name)
-                    put("platform", "android")
-                    put("enforcing", enforcing)
-                    put("hardcore", hardcore)
-                },
-            ) { onConflict = "id" }
+            supabase.postgrest.rpc("device_heartbeat", heartbeatBody(mirror.deviceId, name, enforcing, hardcore))
         }
     }
 
@@ -290,6 +289,20 @@ class Device(
             "blocks", "day_plans", "schedules", "blocklist_entries", "blocklist_removals", "blocklist_opt_outs",
             "breaches", "settings", "loose_ends", "rituals", "shutdown_delays", "weekly_targets",
         )
+
+        /** The `device_heartbeat` RPC body: `{"device": {id, name, platform, enforcing, hardcore}}`. */
+        fun heartbeatBody(id: String, name: String, enforcing: Boolean, hardcore: Boolean): JsonObject = buildJsonObject {
+            put(
+                "device",
+                buildJsonObject {
+                    put("id", id)
+                    put("name", name)
+                    put("platform", "android")
+                    put("enforcing", enforcing)
+                    put("hardcore", hardcore)
+                },
+            )
+        }
 
         /** Where the magic link sends the browser back to (registered in backend config). */
         const val REDIRECT_URL = "cloister://auth"

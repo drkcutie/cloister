@@ -5,9 +5,12 @@ import android.content.Context
 import android.content.Intent
 import dev.cloister.app.CloisterApp
 
-/** Restarts enforcement after a reboot or an update (the Application starts the Enforcer). */
+/** Restarts enforcement and the Shutdown warnings after a reboot or an update (the Application starts the Enforcer). */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        CloisterApp.instance.enforcer.ensureVpn()
+        val app = CloisterApp.instance
+        app.enforcer.ensureVpn()
+        // Alarms don't survive a reboot: set the next Shutdown warning again.
+        ShutdownWarningAlarm.schedule(context, app.device.state(), app.device.serverTime(), force = true)
     }
 }

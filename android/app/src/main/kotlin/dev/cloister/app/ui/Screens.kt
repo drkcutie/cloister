@@ -176,28 +176,27 @@ fun LockdownScreen(now: EnforcementNow, openTomorrow: () -> Unit) {
 // --- Deep Session in progress --------------------------------------------------------------
 
 @Composable
-fun ActiveScreen(session: Block, serverTime: Instant, enforcing: Boolean, openSetup: () -> Unit) {
+fun ActiveScreen(block: Block, enforcing: Boolean, openSetup: () -> Unit) {
     val c = LocalColors.current
-    val offset = serverTime.toEpochMilli() - System.currentTimeMillis()
-    val now = rememberNow(offset)
-    val total = Duration.between(session.startsAt, session.endsAt).seconds.coerceAtLeast(1)
-    val elapsed = Duration.between(session.startsAt, now).seconds
+    val now = rememberNow()
+    val total = Duration.between(block.startsAt, block.endsAt).seconds.coerceAtLeast(1)
+    val elapsed = Duration.between(block.startsAt, now).seconds
     val fraction = (elapsed.toFloat() / total).coerceIn(0f, 1f)
     Column(
         Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 40.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Masthead(if (session.quitSocial) "Quit-Social Block" else if (session.deep) "Deep Session" else "Block")
+            Masthead(if (block.quitSocial) "Quit-Social Block" else if (block.deep) "Deep Session" else "Block")
         }
         Column(Modifier.widthIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(48.dp)) {
-            session.intent?.let {
+            block.intent?.let {
                 Text(it, style = Type.intent.copy(fontSize = Type.intent.fontSize * 1.06f), color = c.ink)
             }
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(Copy.countdown(Duration.between(now, session.endsAt)), style = Type.timer, color = c.ink)
-                Progress(fraction, "${(fraction * 100).toInt()} percent of this ${if (session.deep) "Deep Session" else "Block"} has elapsed")
-                Text("Ends at ${Copy.clock(session.endsAt)}", style = Type.detail, color = c.ink2)
+                Text(Copy.countdown(Duration.between(now, block.endsAt)), style = Type.timer, color = c.ink)
+                Progress(fraction, "${(fraction * 100).toInt()} percent of this ${if (block.deep) "Deep Session" else "Block"} has elapsed")
+                Text("Ends at ${Copy.clock(block.endsAt)}", style = Type.detail, color = c.ink2)
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -210,7 +209,7 @@ fun ActiveScreen(session: Block, serverTime: Instant, enforcing: Boolean, openSe
 // --- Depth Rating --------------------------------------------------------------------------
 
 @Composable
-fun DepthRatingScreen(device: Device, session: Block, later: () -> Unit) {
+fun DepthRatingScreen(device: Device, block: Block, later: () -> Unit) {
     val c = LocalColors.current
     val scope = rememberCoroutineScope()
     var chosen by remember { mutableStateOf<Int?>(null) }
@@ -218,8 +217,8 @@ fun DepthRatingScreen(device: Device, session: Block, later: () -> Unit) {
     Page {
         Masthead("Depth Rating")
         Text("How deep was it?", style = Type.title, color = c.ink, modifier = Modifier.semantics { heading() })
-        session.intent?.let { Text(it, style = Type.intent.copy(fontSize = Type.intent.fontSize * 0.8f), color = c.ink2) }
-        Text("${Copy.clock(session.startsAt)} to ${Copy.clock(session.endsAt)}", style = Type.figure, color = c.ink2)
+        block.intent?.let { Text(it, style = Type.intent.copy(fontSize = Type.intent.fontSize * 0.8f), color = c.ink2) }
+        Text("${Copy.clock(block.startsAt)} to ${Copy.clock(block.endsAt)}", style = Type.figure, color = c.ink2)
         DepthRatingSquares(chosen) { chosen = it }
         Row(Modifier.width(312.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("1 shallow", style = Type.label, color = c.ink2)
@@ -228,7 +227,7 @@ fun DepthRatingScreen(device: Device, session: Block, later: () -> Unit) {
         CommitButton("Record the Depth Rating", enabled = chosen != null) {
             val rating = chosen ?: return@CommitButton
             scope.launch {
-                notice = runCatching { device.send(Command.RecordDepthRating(session.id, rating)) }.fold(
+                notice = runCatching { device.send(Command.RecordDepthRating(block.id, rating)) }.fold(
                     { if (it is CommandOutcome.Rejected) Copy.reason(it.reason) else null },
                     { "Offline. The Depth Rating can be recorded once the phone is online." },
                 )
@@ -322,7 +321,7 @@ fun SetupScreen(device: Device, now: EnforcementNow, actions: Actions) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Account", style = Type.heading, color = c.ink)
             Text(device.email ?: "Signed in", style = Type.detail, color = c.ink2)
-            if (now.session == null) TextAction("Sign out") { scope.launch { device.signOut() } }
+            if (now.block == null) TextAction("Sign out") { scope.launch { device.signOut() } }
         }
         val breaches = device.state().breaches
         if (breaches.isNotEmpty()) {

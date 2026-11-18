@@ -235,14 +235,14 @@ private fun LooseEndsStep(state: State, now: Instant, sending: Boolean, send: (C
 private fun ReviewStep(state: State, now: Instant, date: LocalDate, summary: dev.cloister.core.WeekSummary) {
     val c = LocalColors.current
     val z = zone(state)
-    val sessions = (DayPlans.dayPlan(state, date)?.slots.orEmpty().filter { it.deep && !it.startsAt.isAfter(now) }
+    val deepSessions = (DayPlans.dayPlan(state, date)?.slots.orEmpty().filter { it.deep && !it.startsAt.isAfter(now) }
         .map { Triple(it.label, it.startsAt to it.endsAt, it.depthRating) } +
         state.blocks.filter { it.deep && it.startsAt.atZone(z).toLocalDate() == date && !it.startsAt.isAfter(now) }
             .map { Triple(it.intent ?: "Deep Session", it.startsAt to it.endsAt, it.depthRating) })
         .sortedBy { it.second.first }
-    if (sessions.isEmpty()) Text("No Deep Session today.", style = Type.body, color = c.ink2)
+    if (deepSessions.isEmpty()) Text("No Deep Session today.", style = Type.body, color = c.ink2)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        for ((intent, span, rating) in sessions) {
+        for ((intent, span, rating) in deepSessions) {
             Row(
                 Modifier.fillMaxWidth().background(Depth.d1).padding(12.dp).semantics(mergeDescendants = true) {},
                 horizontalArrangement = Arrangement.spacedBy(12.dp),

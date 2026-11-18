@@ -27,6 +27,8 @@ data class State(
     val settings: Settings? = null,
     /** Requested settings that loosen something, waiting for the next day boundary. */
     val pendingSettings: PendingSettings? = null,
+    /** Settings in force before, each until a change replaced them, sorted by `until`. */
+    val pastSettings: List<PastSettings> = emptyList(),
     /** When the first settings were made; no ritual is due before then. Null: unknown (every Workday counts). */
     val settingsSince: Instant? = null,
     /** The weekly Deep Hours target in force as of the last change. */
@@ -51,6 +53,7 @@ data class State(
         "breaches" to nonEmpty(breaches) { arr(it) { b -> b.toJson() } },
         "settings" to settings?.toJson(),
         "pending_settings" to pendingSettings?.toJson(),
+        "past_settings" to nonEmpty(pastSettings) { arr(it) { p -> p.toJson() } },
         "settings_since" to settingsSince?.let(::time),
         "weekly_target" to weeklyTarget?.toJson(),
         "pending_weekly_target" to pendingWeeklyTarget?.toJson(),
@@ -72,6 +75,7 @@ data class State(
                 breaches = objects("breaches", emptyList(), Breach::fromJson),
                 settings = obj("settings", Settings::fromJson),
                 pendingSettings = obj("pending_settings", PendingSettings::fromJson),
+                pastSettings = objects("past_settings", emptyList(), PastSettings::fromJson),
                 settingsSince = instantOrNull("settings_since"),
                 weeklyTarget = obj("weekly_target", WeeklyTarget::fromJson),
                 pendingWeeklyTarget = obj("pending_weekly_target", PendingWeeklyTarget::fromJson),

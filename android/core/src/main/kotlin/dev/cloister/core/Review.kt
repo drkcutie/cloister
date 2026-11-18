@@ -115,20 +115,20 @@ object Review {
         }
     }
 
-    private data class Session(val id: String, val start: Instant, val end: Instant, val rating: Int?)
+    private data class DeepSession(val id: String, val start: Instant, val end: Instant, val rating: Int?)
 
     /** Deep Blocks, and deep Slots of saved or Schedule-filled Day Plans around [from, to). */
-    private fun deepSessions(state: State, from: Instant, to: Instant): List<Session> {
-        val sessions = state.blocks.filter { it.deep }.map { Session(it.id, it.startsAt, it.endsAt, it.depthRating) }
+    private fun deepSessions(state: State, from: Instant, to: Instant): List<DeepSession> {
+        val found = state.blocks.filter { it.deep }.map { DeepSession(it.id, it.startsAt, it.endsAt, it.depthRating) }
             .toMutableList()
         var date = localDate(state, from).minusDays(1)
         val last = localDate(state, to)
         while (!date.isAfter(last)) {
             DayPlans.dayPlan(state, date)?.slots?.filter { it.deep }
-                ?.forEach { sessions += Session(it.id, it.startsAt, it.endsAt, it.depthRating) }
+                ?.forEach { found += DeepSession(it.id, it.startsAt, it.endsAt, it.depthRating) }
             date = date.plusDays(1)
         }
-        return sessions.sortedWith(compareBy({ it.start }, { it.id })).distinctBy { it.id }
+        return found.sortedWith(compareBy({ it.start }, { it.id })).distinctBy { it.id }
     }
 
     /** The scoreboard for the ISO week (local) holding [now], counting time up to [now]. */
@@ -136,10 +136,10 @@ object Review {
         val monday = weekStart(localDate(state, now))
         val days = (0L until 7L).map { monday.plusDays(it) }
         val bounds = (0L..7L).map { dayStart(state, monday.plusDays(it)) }
-        val sessions = deepSessions(state, bounds[0], bounds[7])
+        val deepSessionsInWeek = deepSessions(state, bounds[0], bounds[7])
         val byDay = (0 until 7).map { i ->
             val to = minOf(bounds[i + 1], now)
-            sessions.sumOf { s ->
+            deepSessionsInWeek.sumOf { s ->
                 Duration.between(maxOf(s.start, bounds[i]), minOf(s.end, to)).toMinutes().coerceAtLeast(0)
             }
         }

@@ -32,6 +32,7 @@ class MirrorMergeTest {
             rituals = listOf(Ritual(java.time.LocalDate.parse("2026-01-05"), t("2026-01-05T17:10:00Z"))),
             shutdownDelays = listOf(ShutdownDelay(java.time.LocalDate.parse("2026-01-05"), t("2026-01-05T16:00:00Z"))),
             settingsSince = t("2026-01-01T10:00:00Z"),
+            pastSettings = listOf(PastSettings(Settings(listOf(1, 2, 3), "09:00", "17:00"), t("2026-01-03T10:00:00Z"))),
             weeklyTarget = WeeklyTarget(20),
             pendingWeeklyTarget = PendingWeeklyTarget(15, t("2026-01-12T00:00:00Z")),
         )
@@ -40,6 +41,7 @@ class MirrorMergeTest {
         assertEquals(incoming.rituals, merged.rituals)
         assertEquals(incoming.shutdownDelays, merged.shutdownDelays)
         assertEquals(incoming.settingsSince, merged.settingsSince)
+        assertEquals(incoming.pastSettings, merged.pastSettings)
         assertEquals(incoming.weeklyTarget, merged.weeklyTarget)
         assertEquals(incoming.pendingWeeklyTarget, merged.pendingWeeklyTarget)
     }

@@ -91,7 +91,7 @@ fun App(device: Device, enforcer: Enforcer, configured: Boolean, actions: Action
                 !onboarded -> "onboarding"
                 !signedIn -> "sign-in"
                 ritualDue && !ritualDone -> "ritual"
-                now.session != null -> "active"
+                now.block != null -> "active"
                 unrated != null && tab == Tab.Today -> "rating"
                 else -> tab.name
             }
@@ -103,7 +103,7 @@ fun App(device: Device, enforcer: Enforcer, configured: Boolean, actions: Action
                     }
                     "sign-in" -> SignInScreen(device, configured, actions)
                     "ritual" -> RitualFlowScreen(device, state, serverNow) { ritualDone = true }
-                    "active" -> ActiveScreen(now.session!!, now.serverTime, now.vpnRunning && now.appBlockerOn) { tab = Tab.Setup }
+                    "active" -> ActiveScreen(now.block!!, now.vpnRunning && now.appBlockerOn) { tab = Tab.Setup }
                     "rating" -> DepthRatingScreen(device, unrated!!) { ratingLater = ratingLater + unrated.id }
                     else -> Column(Modifier.fillMaxSize()) {
                         TabRow(tab) { tab = it }
