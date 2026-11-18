@@ -4,7 +4,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application android:testOnly="true">
         <receiver
-            android:name=".debug.DebugReceiver"
+            android:name=".devtools.DebugReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="dev.cloister.DEBUG_SIGN_IN" />
