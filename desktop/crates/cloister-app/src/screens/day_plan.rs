@@ -79,14 +79,9 @@ impl PlanBackend for Plans {
     }
 }
 
-/// The same default as `cloister-device`, so the app sees the mirror it keeps in step.
+/// The same default as `cloister-device` and the rest of the app (the user data dir).
 fn default_mirror() -> PathBuf {
-    let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
-    if cfg!(target_os = "macos") {
-        home.join("Library/Application Support/Cloister/mirror.sqlite")
-    } else {
-        home.join(".local/share/cloister/mirror.sqlite")
-    }
+    cloister_app_model::data_dir().join("mirror.sqlite")
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

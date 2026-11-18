@@ -145,10 +145,17 @@ fn open(backend: &Backend, f: &Flags) -> Result<Device, String> {
 
 fn default_mirror() -> PathBuf {
     let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+    // Same place as the app (cloister_app_model::data_dir).
     if cfg!(target_os = "macos") {
         home.join("Library/Application Support/Cloister/mirror.sqlite")
+    } else if cfg!(windows) {
+        PathBuf::from(std::env::var_os("APPDATA").unwrap_or_default())
+            .join("Cloister/mirror.sqlite")
     } else {
-        home.join(".local/share/cloister/mirror.sqlite")
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".local/share"))
+            .join("cloister/mirror.sqlite")
     }
 }
 

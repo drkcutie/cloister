@@ -10,6 +10,7 @@ mod blocklists;
 pub(crate) mod day_plan;
 mod devices;
 mod ended;
+mod onboarding;
 mod rating;
 mod session;
 mod sidebar;
@@ -292,6 +293,15 @@ pub fn open_main_window(cx: &mut App) {
         }),
         ..Default::default()
     };
+    if onboarding::wanted() {
+        if let Err(e) = gpui_kit::open_window(options, cx, |window, cx| {
+            cx.new(|cx| onboarding::OnboardingView::new(window, cx))
+        }) {
+            eprintln!("cloister-app: opening the window failed: {e}");
+        }
+        cx.activate(true);
+        return;
+    }
     if let Err(e) = gpui_kit::open_window(options, cx, |window, cx| {
         cx.new(|cx| {
             let mut view = MainView::new(window, cx);

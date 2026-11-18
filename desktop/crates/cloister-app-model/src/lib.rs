@@ -23,7 +23,7 @@ pub use blocklists::{
     PendingChange, Rules, ServiceRules,
 };
 pub use day_plan::{DayPlanEditor, EditorSlot, PlanBackend, DEFAULT_WORKDAY, STEP_MINUTES};
-pub use devices::{devices_view, open_account, AccountRules, DeviceRow, DevicesView};
+pub use devices::{data_dir, devices_view, open_account, AccountRules, DeviceRow, DevicesView};
 pub use enforcer::{Enforcer, SocketEnforcer};
 pub use format::Zone;
 pub use hold::Hold;
