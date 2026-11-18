@@ -103,6 +103,12 @@ object DayPlans {
         input: List<SlotInput>,
         now: Instant,
     ): State {
+        // With settings, the plan runs from that day's Workday Start to its Shutdown Time.
+        when (val w = WorkdaySettings.workday(state, date, now)) {
+            Workday.NotConfigured -> Unit
+            Workday.RestDay -> throw Rejection(Reason.RestDay)
+            is Workday.Bounds -> if (startsAt != w.start || endsAt != w.end) throw Rejection(Reason.InvalidDayPlan)
+        }
         if (!endsAt.isAfter(startsAt) || Duration.between(startsAt, endsAt) > MAX_DAY) {
             throw Rejection(Reason.InvalidDayPlan)
         }

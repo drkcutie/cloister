@@ -12,6 +12,7 @@ import java.time.Instant
  *   boundary after [now].
  * - Day Plans and Schedules are replaced (the backend already applied the ratchet).
  * - Breaches: the union.
+ * - Settings: what tightens now is taken now; what loosens waits for the next day boundary.
  */
 object MirrorMerge {
     fun merge(local: State, incoming: State, now: Instant): State {
@@ -38,6 +39,7 @@ object MirrorMerge {
             }.sorted().distinctBy { it.blocklist }
         val breaches = (local.breaches + incoming.breaches).distinctBy { it.id }
             .sortedWith(compareBy({ it.occurredAt }, { it.id }))
+        val (settings, pending) = mergeSettings(local, incoming, now)
         return State(
             blocks = blocks.values.sortedWith(compareBy({ it.startsAt }, { it.id })),
             dayPlans = incoming.dayPlans,
@@ -47,6 +49,23 @@ object MirrorMerge {
             blocklistRemovals = removals,
             blocklistOptOuts = optOuts,
             breaches = breaches,
+            settings = settings,
+            pendingSettings = pending,
         )
+    }
+
+    /** `State::merge_settings` in the Rust engine. */
+    private fun mergeSettings(local: State, incoming: State, now: Instant): Pair<Settings?, PendingSettings?> {
+        val incomingNow = WorkdaySettings.settingsAt(incoming, now)
+            ?: return local.settings to local.pendingSettings // the backend never drops settings
+        val pending = incoming.pendingSettings?.takeIf { it.effectiveAt.isAfter(now) }
+        val target = pending?.settings ?: incomingNow
+        val base = WorkdaySettings.settingsAt(local, now) ?: return incomingNow to pending
+        val inForce = base.tightest(incomingNow)
+        if (inForce == target) return inForce to null
+        val boundary = Blocklists.nextDayBoundary(local.copy(timeZone = incoming.timeZone), now)
+        val known = local.pendingSettings?.takeIf { it.settings == target && it.effectiveAt.isAfter(now) }
+        val effectiveAt = known?.effectiveAt ?: pending?.effectiveAt?.let { maxOf(it, boundary) } ?: boundary
+        return inForce to PendingSettings(target, effectiveAt)
     }
 }

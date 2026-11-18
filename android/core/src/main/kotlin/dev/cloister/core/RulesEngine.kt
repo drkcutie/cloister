@@ -49,6 +49,7 @@ object RulesEngine {
             val extraDomains = Blocklists.normalizeAll(EntryKind.Domain, command.extraDomains)
             val extraApps = Blocklists.normalizeAll(EntryKind.App, command.extraApps)
             if (idTaken(state, command.blockId)) throw Rejection(Reason.DuplicateBlock)
+            if (command.deep) WorkdaySettings.lockdown(state, now)?.let { throw Rejection(it.reason) }
             val ids = (Blocklists.distractionIdsInForce(state, now) + command.blocklists).toSortedSet().toList()
             state.copy(
                 blocks = state.blocks + Block(
@@ -108,6 +109,7 @@ object RulesEngine {
         is Command.WriteDayPlan ->
             DayPlans.writeDayPlan(state, command.date, command.startsAt, command.endsAt, command.slots, now)
         is Command.PutSchedule -> DayPlans.putSchedule(state, command, now)
+        is Command.ChangeSettings -> WorkdaySettings.changeSettings(state, command, now)
     }
 
     /** A Deep Session is a deep Block or a deep Slot of a saved Day Plan. */
@@ -149,6 +151,11 @@ object RulesEngine {
             if (!block.quitSocial) lists += Blocklists.distractionIdsInForce(state, serverTime)
             domains += block.extraDomains
             apps += block.extraApps
+        }
+        // Evening Lockdown and Rest Days: the Work List and the Distraction List, on the clock.
+        if (WorkdaySettings.lockdown(state, serverTime) != null) {
+            lists += Catalog.builtin.workIds()
+            lists += Blocklists.distractionIdsInForce(state, serverTime)
         }
         for (list in lists) {
             domains += Blocklists.effectiveEntries(state, list, EntryKind.Domain, serverTime)

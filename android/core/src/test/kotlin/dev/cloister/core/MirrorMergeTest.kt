@@ -54,4 +54,19 @@ class MirrorMergeTest {
         assertEquals(listOf(entry), merged.blocklistEntries)
         assertEquals(4, merged.blocks.single().depthRating)
     }
+
+    @Test
+    fun laterSettingsFromTheBackendWaitForTomorrow() {
+        val nineToFive = Settings(listOf(1, 2, 3, 4, 5), "09:00", "17:00")
+        val local = State(settings = nineToFive)
+        // A stale or hostile response that moves Shutdown Time later must not apply today.
+        val incoming = State(settings = Settings(listOf(1, 2, 3, 4, 5), "09:00", "20:00"))
+        val merged = MirrorMerge.merge(local, incoming, now)
+        assertEquals(nineToFive, merged.settings)
+        assertEquals(t("2026-01-06T00:00:00Z"), merged.pendingSettings!!.effectiveAt)
+        // An earlier Shutdown Time applies at once.
+        val stricter = MirrorMerge.merge(local, State(settings = Settings(listOf(1, 2, 3, 4, 5), "09:00", "16:00")), now)
+        assertEquals("16:00", stricter.settings!!.shutdownTime)
+        assertEquals(null, stricter.pendingSettings)
+    }
 }

@@ -94,6 +94,20 @@ sealed interface Command {
         )
     }
 
+    /** Set Workdays, Workday Start and Shutdown Time: what tightens applies now, what loosens tomorrow. */
+    data class ChangeSettings(
+        val workdays: List<Int>,
+        val workdayStart: String,
+        val shutdownTime: String,
+        val timeZone: String? = null,
+    ) : Command {
+        override fun toJson() = obj(
+            "type" to str("change_settings"), "workdays" to arr(workdays) { JsonPrimitive(it) },
+            "workday_start" to str(workdayStart), "shutdown_time" to str(shutdownTime),
+            "time_zone" to timeZone?.let(::str),
+        )
+    }
+
     data class WriteDayPlan(
         val date: LocalDate,
         val startsAt: Instant,
@@ -155,6 +169,10 @@ sealed interface Command {
                     "start_quit_social_block" -> StartQuitSocialBlock(string("block_id"), bool("confirm_long", false))
                     "record_breach" ->
                         RecordBreach(string("breach_id"), BreachKind.of(string("kind")), instantOrNull("client_time"))
+                    "change_settings" -> ChangeSettings(
+                        objects("workdays", read = ::weekday), string("workday_start"), string("shutdown_time"),
+                        stringOrNull("time_zone"),
+                    )
                     "write_day_plan" -> WriteDayPlan(
                         date("date"), instant("starts_at"), instant("ends_at"),
                         objects("slots", read = SlotInput::fromJson),
@@ -218,7 +236,11 @@ enum class Reason(val code: String) {
     SlotCannotBeRemoved("slot_cannot_be_removed"),
     InvalidSchedule("invalid_schedule"),
     UnknownTimeZone("unknown_time_zone"),
-    SchedulesOverlap("schedules_overlap");
+    SchedulesOverlap("schedules_overlap"),
+    EveningLockdown("evening_lockdown"),
+    RestDay("rest_day"),
+    InvalidSettings("invalid_settings"),
+    TimeZoneCannotChange("time_zone_cannot_change");
 
     companion object {
         /** The Reason for a code, or null for a code only the backend uses. */

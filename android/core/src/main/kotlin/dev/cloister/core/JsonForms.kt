@@ -56,6 +56,8 @@ internal class Fields(private val obj: JsonObject, private val what: String) {
         return (el as? JsonArray ?: throw JsonFormException("$what: `$key` must be an array")).map(read)
     }
 
+    fun <T> obj(key: String, read: (JsonElement) -> T): T? = raw(key)?.let(read)
+
     fun done() {
         val unknown = obj.keys - seen
         if (unknown.isNotEmpty()) throw JsonFormException("$what: unknown field(s) $unknown")

@@ -19,6 +19,9 @@ class Catalog(val blocklists: List<Blocklist>, val relatedDomains: Map<String, L
     /** Ids of the Blocklists that make up the Distraction List, in catalog order. */
     fun distractionIds() = blocklists.filter { it.kind == BlocklistKind.Distraction }.map { it.id }
 
+    /** Ids of the Work List's Blocklists. */
+    fun workIds() = blocklists.filter { it.kind == BlocklistKind.Work }.map { it.id }
+
     /** Domains blocked together with [domain] (e.g. `youtube.com` -> `youtu.be`). */
     fun related(domain: String) = relatedDomains[domain].orEmpty()
 

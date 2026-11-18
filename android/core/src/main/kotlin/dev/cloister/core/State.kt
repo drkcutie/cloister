@@ -23,6 +23,10 @@ data class State(
     val blocklistOptOuts: List<BlocklistOptOut> = emptyList(),
     /** Breaches recorded, sorted by time then id. */
     val breaches: List<Breach> = emptyList(),
+    /** Workdays, Workday Start and Shutdown Time in force as of the last change; null until first set. */
+    val settings: Settings? = null,
+    /** Requested settings that loosen something, waiting for the next day boundary. */
+    val pendingSettings: PendingSettings? = null,
 ) {
     fun toJson(): JsonObject = obj(
         "blocks" to arr(blocks) { it.toJson() },
@@ -33,6 +37,8 @@ data class State(
         "blocklist_removals" to nonEmpty(blocklistRemovals) { arr(it) { r -> r.toJson() } },
         "blocklist_opt_outs" to nonEmpty(blocklistOptOuts) { arr(it) { o -> o.toJson() } },
         "breaches" to nonEmpty(breaches) { arr(it) { b -> b.toJson() } },
+        "settings" to settings?.toJson(),
+        "pending_settings" to pendingSettings?.toJson(),
     )
 
     companion object {
@@ -46,6 +52,8 @@ data class State(
                 blocklistRemovals = objects("blocklist_removals", emptyList(), BlocklistRemoval::fromJson),
                 blocklistOptOuts = objects("blocklist_opt_outs", emptyList(), BlocklistOptOut::fromJson),
                 breaches = objects("breaches", emptyList(), Breach::fromJson),
+                settings = obj("settings", Settings::fromJson),
+                pendingSettings = obj("pending_settings", PendingSettings::fromJson),
             ).also { done() }
         }
     }
