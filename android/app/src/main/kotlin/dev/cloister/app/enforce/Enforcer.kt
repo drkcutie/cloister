@@ -52,7 +52,7 @@ class Enforcer(private val context: Context, val device: Device, private val sco
     private val _now = MutableStateFlow(EnforcementNow())
     val now: StateFlow<EnforcementNow> = _now.asStateFlow()
     private var syncJob: Job? = null
-    private var lastReportedEnforcing: Boolean? = null
+    private var lastReportedEnforcing: Pair<Boolean, Boolean>? = null
     private val prefs = context.getSharedPreferences("enforcer", Context.MODE_PRIVATE)
 
     /** The user has turned the VPN on at least once (so it being off later is a choice). */
@@ -107,9 +107,10 @@ class Enforcer(private val context: Context, val device: Device, private val sco
         if (owner) applyHardcore(dpm, admin, blockRunning = session != null)
         if (device.signedIn && syncJob == null) syncJob = device.startSync(scope)
         val enforcing = next.vpnRunning && next.appBlockerOn
-        if (device.signedIn && enforcing != lastReportedEnforcing) {
-            lastReportedEnforcing = enforcing
-            scope.launch { runCatching { device.reportEnforcing(enforcing) } }
+        val reported = enforcing to owner
+        if (device.signedIn && reported != lastReportedEnforcing) {
+            lastReportedEnforcing = reported
+            scope.launch { runCatching { device.reportEnforcing(enforcing, hardcore = owner) } }
         }
         if (!next.vpnRunning && vpnWanted) ensureVpn()
     }

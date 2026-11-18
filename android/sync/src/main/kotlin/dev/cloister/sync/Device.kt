@@ -76,6 +76,7 @@ class Device(
     private val _version = MutableStateFlow(0L)
     private val _status = MutableStateFlow(SyncStatus.Offline)
     @Volatile private var enforcing = false
+    @Volatile private var hardcore = false
 
     /** Bumped whenever the cached state changes; collect it to refresh UI and enforcement. */
     val version: StateFlow<Long> = _version.asStateFlow()
@@ -192,9 +193,13 @@ class Device(
         changed
     }
 
-    /** Tells the account whether this Device is enforcing; repeated by the sync loop as a heartbeat. */
-    suspend fun reportEnforcing(enforcing: Boolean) {
+    /**
+     * Tells the account whether this Device is enforcing, and whether in Hardcore Mode (Device
+     * Owner), for the Devices screen; repeated by the sync loop as a heartbeat.
+     */
+    suspend fun reportEnforcing(enforcing: Boolean, hardcore: Boolean = false) {
         this.enforcing = enforcing
+        this.hardcore = hardcore
         register()
     }
 
@@ -256,6 +261,7 @@ class Device(
                     put("name", name)
                     put("platform", "android")
                     put("enforcing", enforcing)
+                    put("hardcore", hardcore)
                 },
             ) { onConflict = "id" }
         }

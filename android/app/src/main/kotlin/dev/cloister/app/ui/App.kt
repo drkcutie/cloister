@@ -82,7 +82,10 @@ fun App(device: Device, enforcer: Enforcer, configured: Boolean, actions: Action
             val unrated = remember(version, serverNow.epochSecond / 60) {
                 unratedDeepSession(state, serverNow)?.takeIf { it.id !in ratingLater }
             }
+            val context = androidx.compose.ui.platform.LocalContext.current
+            var onboarded by remember { mutableStateOf(OnboardingMarker.isDone(context)) }
             val screen = when {
+                !onboarded -> "onboarding"
                 !signedIn -> "sign-in"
                 now.session != null -> "active"
                 unrated != null && tab == Tab.Today -> "rating"
@@ -90,6 +93,10 @@ fun App(device: Device, enforcer: Enforcer, configured: Boolean, actions: Action
             }
             Crossfade(screen, animationSpec = tween(240, easing = FastOutSlowInEasing), label = "screen") { s ->
                 when (s) {
+                    "onboarding" -> OnboardingScreen(device, now, version, configured, actions) {
+                        OnboardingMarker.markDone(context)
+                        onboarded = true
+                    }
                     "sign-in" -> SignInScreen(device, configured, actions)
                     "active" -> ActiveScreen(now.session!!, now.serverTime, now.vpnRunning && now.appBlockerOn) { tab = Tab.Setup }
                     "rating" -> DepthRatingScreen(device, unrated!!) { ratingLater = ratingLater + unrated.id }
