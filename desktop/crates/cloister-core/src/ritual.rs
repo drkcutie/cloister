@@ -379,7 +379,7 @@ mod tests {
             date: "2026-01-05".parse().unwrap(),
             completed_at: at("2026-01-05T17:15:00Z"),
         };
-        assert!(!state.merge_ritual_records(&[], &[done.clone()], now));
+        assert!(!state.merge_ritual_records(&[], std::slice::from_ref(&done), now));
         assert_eq!(ritual_screen(&state, now), RitualScreen::Due);
         let plan = crate::Command::WriteDayPlan {
             date: "2026-01-06".parse().unwrap(),

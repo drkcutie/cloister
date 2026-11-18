@@ -107,14 +107,14 @@ impl RitualFlow {
     /// Move on, unless this step's requirement isn't met yet (then: what it needs).
     pub fn next(&mut self, backend: &impl PlanBackend) -> Result<(), Notice> {
         if let Some(code) = self.holding_reason(backend) {
-            let held = match (self.step, code.as_str()) {
-                (RitualStep::LooseEnds, "loose_end_required") => true,
-                (
-                    RitualStep::Plan,
-                    "day_plan_required" | "deep_slot_required" | "workday_not_covered",
-                ) => true,
-                _ => false,
-            };
+            let held = matches!(
+                (self.step, code.as_str()),
+                (RitualStep::LooseEnds, "loose_end_required")
+                    | (
+                        RitualStep::Plan,
+                        "day_plan_required" | "deep_slot_required" | "workday_not_covered"
+                    )
+            );
             if held {
                 return Err(self.notice(backend, &code));
             }

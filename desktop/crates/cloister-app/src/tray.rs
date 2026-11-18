@@ -14,6 +14,8 @@ use crate::state::CloisterHandle;
 struct Tray {
     icon: TrayIcon,
     status: MenuItem,
+    delay_left: MenuItem,
+    delay: MenuItem,
     open_id: tray_icon::menu::MenuId,
     quit_id: tray_icon::menu::MenuId,
     last_title: Option<String>,
@@ -22,12 +24,23 @@ struct Tray {
 /// Create the menu-bar item. Must run on the main thread inside `Application::run`.
 pub fn install(cx: &mut App) {
     let status = MenuItem::new("No Block in force", false, None);
+    let delay_left = MenuItem::new("Shutdown Delay", false, None);
+    // One 30-minute Shutdown Delay a week, from any Device. Always logged.
+    let delay = MenuItem::new("Use Shutdown Delay, 30 minutes", false, None);
     let open = MenuItem::new("Open Cloister", true, None);
     // Quitting the app never touches a Block: the enforcement service keeps it in force.
     let quit = MenuItem::new("Quit Cloister", true, None);
     let menu = Menu::new();
     let built = menu
-        .append_items(&[&status, &PredefinedMenuItem::separator(), &open, &quit])
+        .append_items(&[
+            &status,
+            &PredefinedMenuItem::separator(),
+            &delay_left,
+            &delay,
+            &PredefinedMenuItem::separator(),
+            &open,
+            &quit,
+        ])
         .map_err(|e| e.to_string())
         .and_then(|_| {
             TrayIconBuilder::new()
@@ -47,6 +60,8 @@ pub fn install(cx: &mut App) {
     let mut tray = Tray {
         icon,
         status,
+        delay_left,
+        delay,
         open_id: open.id().clone(),
         quit_id: quit.id().clone(),
         last_title: None,
@@ -67,12 +82,28 @@ impl Tray {
                 open_main_window(cx);
             } else if event.id == self.quit_id {
                 cx.quit();
+            } else if event.id == *self.delay.id() {
+                if let Some(handle) = cx.try_global::<CloisterHandle>() {
+                    let cloister = handle.0.clone();
+                    cloister.update(cx, |c, cx| c.use_shutdown_delay(cx));
+                }
             }
         }
         let Some(handle) = cx.try_global::<CloisterHandle>() else {
             return;
         };
         let cloister = handle.0.read(cx);
+        match cloister.shutdown_delay() {
+            Some(delay) => {
+                self.delay_left.set_text(&delay.text);
+                self.delay.set_enabled(delay.left > 0);
+            }
+            None => {
+                self.delay_left
+                    .set_text("Shutdown Delay: sign in to use it");
+                self.delay.set_enabled(false);
+            }
+        }
         let view = cloister.view();
         let zone = cloister.today().zone();
         let (title, status) = match &view.active {

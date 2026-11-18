@@ -28,13 +28,13 @@ const PX_PER_MINUTE: f32 = 1.2;
 
 /// Where plans come from: a signed-in Device, or nothing (shown read-only, with a notice).
 #[derive(Clone)]
-enum Plans {
+pub(crate) enum Plans {
     Device(Device),
     SignedOut,
 }
 
 impl Plans {
-    fn open() -> Self {
+    pub(crate) fn open() -> Self {
         let mirror = std::env::var_os("CLOISTER_MIRROR")
             .map(PathBuf::from)
             .unwrap_or_else(default_mirror);
@@ -93,6 +93,8 @@ fn default_mirror() -> PathBuf {
 pub(crate) enum Day {
     Today,
     Tomorrow,
+    /// One date only, with no Today/Tomorrow switch (the Shutdown Ritual's "Plan tomorrow").
+    Date(NaiveDate),
 }
 
 #[derive(Clone, Copy)]
@@ -339,6 +341,7 @@ fn date_of(day: Day) -> NaiveDate {
     match day {
         Day::Today => today,
         Day::Tomorrow => today + Duration::days(1),
+        Day::Date(date) => date,
     }
 }
 
@@ -394,13 +397,13 @@ impl Render for DayPlanView {
                                             .child(title),
                                     ),
                             )
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap(space::S2)
-                                    .child(day_button(self, &p, Day::Today, "Today", cx))
-                                    .child(day_button(self, &p, Day::Tomorrow, "Tomorrow", cx)),
-                            ),
+                            .child(div().flex().gap(space::S2).when(
+                                !matches!(self.day, Day::Date(_)),
+                                |d| {
+                                    d.child(day_button(self, &p, Day::Today, "Today", cx))
+                                        .child(day_button(self, &p, Day::Tomorrow, "Tomorrow", cx))
+                                },
+                            )),
                     )
                     .children(signed_out.map(|n| ui::notice(&p, &n)))
                     .children(self.editor.is_rest_day().then(|| {

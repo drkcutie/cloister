@@ -21,6 +21,7 @@ use crate::service::{Clock, Platform, Service};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "request", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)] // one message per connection; size is irrelevant
 pub enum Request {
     /// A rules-engine command (same JSON form as in the shared fixtures).
     Command {
@@ -46,6 +47,7 @@ pub enum Request {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "response", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum Response {
     Accepted {
         enforcement: Enforcement,

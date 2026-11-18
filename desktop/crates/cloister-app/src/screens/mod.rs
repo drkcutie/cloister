@@ -7,7 +7,7 @@
 
 mod begin;
 mod blocklists;
-mod day_plan;
+pub(crate) mod day_plan;
 mod devices;
 mod ended;
 mod rating;

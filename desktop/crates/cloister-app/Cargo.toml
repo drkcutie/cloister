@@ -18,3 +18,10 @@ cloister-sync = { path = "../cloister-sync" }
 # Pin exactly: gpui-kit re-exports GPUI (gpui-pre) and moves fast. See desktop/README.md.
 gpui-kit = "=0.10.0"
 tray-icon = "0.26"
+
+# The Shutdown Ritual's kiosk: presentation options and window levels, which GPUI doesn't
+# expose. Same versions GPUI's macOS platform already uses.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow", "NSScreen", "NSRunningApplication"] }
