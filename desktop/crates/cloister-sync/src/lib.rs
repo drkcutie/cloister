@@ -7,10 +7,16 @@
 //!   through Realtime, reports its status and lists the account's Devices.
 
 mod backend;
+mod device;
 mod loopback;
 mod mirror;
+mod realtime;
 
 pub use backend::{Backend, Pkce, Session};
+pub use device::{
+    new_block_id, CommandOutcome, Device, DeviceInfo, DeviceStatus, DeviceSummary, Platform,
+    SyncEvent, SyncHandle, SyncOptions, SyncStatus, STALE_AFTER,
+};
 pub use loopback::LoopbackRedirect;
 pub use mirror::Mirror;
 
