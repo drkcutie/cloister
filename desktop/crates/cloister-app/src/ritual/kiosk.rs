@@ -5,9 +5,9 @@
 //!   again if it is closed.
 //! - Linux: Wayland can't lock the screen. The window asks to be active and full screen once a
 //!   second ([`reassert`]), and its systemd user unit starts it again a second after it exits.
-//! - macOS: AppKit presentation options (Dock and menu bar
-//! hidden, process switching, Force Quit and Hide disabled) and window levels above everything
-//! else on every Space. GPUI doesn't expose these, so they are set here through `objc2`.
+//! - macOS: AppKit presentation options (Dock and menu bar hidden, process switching, Force
+//!   Quit and Hide disabled) and window levels above everything else on every Space. GPUI
+//!   doesn't expose these, so they are set here through `objc2`.
 //!
 //! The options belong to this process: macOS drops them the moment it exits, so killing it
 //! (from ssh, or `launchctl kill`) always returns the Mac to normal. While the ritual is due the

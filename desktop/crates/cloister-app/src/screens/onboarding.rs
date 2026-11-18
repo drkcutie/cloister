@@ -213,7 +213,7 @@ impl OnboardingView {
         // The account may be new since the app started: start again from it.
         let cloister = cx.new(Cloister::new);
         cx.set_global(CloisterHandle(cloister));
-        window.replace_root(cx, |window, cx| super::MainView::new(window, cx));
+        window.replace_root(cx, super::MainView::new);
     }
 
     fn send_link(&mut self, cx: &mut Context<Self>) {
