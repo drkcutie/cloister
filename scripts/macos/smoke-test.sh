@@ -70,6 +70,19 @@ id=$("$CLI" status | sed -n 's/^Block \(blk-[^ ]*\) ends.*/\1/p' | head -1)
 reply=$(echo "{\"request\":\"command\",\"command\":{\"type\":\"cancel_block\",\"block_id\":\"$id\"}}" | nc -U /var/run/cloister.sock)
 if [[ $reply == *loosening_not_accepted* ]]; then pass "IPC refused cancel_block"; else fail "IPC replied: $reply"; fi
 
+echo "== app blocker: Calculator stands in for a blocked app"
+# Calculator is an Apple app, which is never quit, so block a copy with its own bundle id.
+copy=/Applications/CloisterSmokeApp.app
+rm -rf "$copy" && cp -R /System/Applications/Calculator.app "$copy"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.example.cloister-smoke" "$copy/Contents/Info.plist"
+codesign --force --deep -s - "$copy" >/dev/null 2>&1
+# A 2-minute extra for one Block, so nothing stays on the Blocklists afterwards.
+echo "{\"request\":\"command\",\"command\":{\"type\":\"start_block\",\"block_id\":\"smoke-apps-$$\",\"minutes\":2,\"deep\":false,\"extra_apps\":[\"com.example.cloister-smoke\"]}}" | nc -U /var/run/cloister.sock >/dev/null
+sudo -u "${SUDO_USER:-$USER}" open "$copy"
+sleep 8
+if pgrep -f "$copy/Contents/MacOS" >/dev/null; then fail "a blocked app kept running"; else pass "a blocked app was force-quit"; fi
+rm -rf "$copy"
+
 "$CLI" status
 echo
 if [[ $failures -eq 0 ]]; then
