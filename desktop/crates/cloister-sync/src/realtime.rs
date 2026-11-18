@@ -53,10 +53,10 @@ impl Channel {
                     "config": {
                         "broadcast": { "ack": false, "self": false },
                         "presence": { "enabled": false },
-                        "postgres_changes": [{
-                            "event": "*", "schema": "public", "table": "blocks",
+                        "postgres_changes": (["blocks", "day_plans", "schedules"].map(|table| json!({
+                            "event": "*", "schema": "public", "table": table,
                             "filter": format!("user_id=eq.{}", session.user_id),
-                        }],
+                        }))),
                         "private": false,
                     },
                     "access_token": session.access_token,

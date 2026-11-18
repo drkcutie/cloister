@@ -3,10 +3,13 @@
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use cloister_core::{Block, State};
+use cloister_core::{Block, DayPlan, Schedule, State};
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::Result;
+
+const DAY_PLANS_KEY: &str = "day_plans";
+const SCHEDULES_KEY: &str = "schedules";
 
 pub struct Mirror {
     db: Connection,
@@ -67,7 +70,46 @@ impl Mirror {
                 })
             })
             .collect::<Result<Vec<_>>>()?;
-        Ok(State { blocks })
+        Ok(State {
+            blocks,
+            day_plans: self.json(DAY_PLANS_KEY)?,
+            schedules: self.json(SCHEDULES_KEY)?,
+        })
+    }
+
+    /// Take the backend's Day Plans and Schedules as they are: the backend already applied
+    /// the ratchet, and a moved deep Slot must leave its old time. Returns whether anything
+    /// changed.
+    pub fn replace_day_plans(
+        &mut self,
+        day_plans: &[DayPlan],
+        schedules: &[Schedule],
+    ) -> Result<bool> {
+        let plans = serde_json::to_string(day_plans).expect("plans serialize");
+        let schedules = serde_json::to_string(schedules).expect("schedules serialize");
+        let changed = self.get(DAY_PLANS_KEY)?.as_deref() != Some(plans.as_str())
+            || self.get(SCHEDULES_KEY)?.as_deref() != Some(schedules.as_str());
+        if changed {
+            let tx = self.db.transaction()?;
+            for (key, value) in [(DAY_PLANS_KEY, &plans), (SCHEDULES_KEY, &schedules)] {
+                tx.execute(
+                    "insert into meta (key, value) values (?1, ?2)
+                     on conflict (key) do update set value = excluded.value",
+                    [key, value.as_str()],
+                )?;
+            }
+            tx.commit()?;
+        }
+        Ok(changed)
+    }
+
+    fn json<T: serde::de::DeserializeOwned + Default>(&self, key: &str) -> Result<T> {
+        match self.get(key)? {
+            Some(text) => {
+                serde_json::from_str(&text).map_err(|e| crate::Error::Storage(e.to_string()))
+            }
+            None => Ok(T::default()),
+        }
     }
 
     /// Fold Blocks from the backend into the mirror. Only tightens: a new Block is added, a

@@ -7,8 +7,10 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
-use cloister_core::{enforcement, Block, Command, Enforcement, State};
+use chrono::{DateTime, NaiveDate, Utc};
+use cloister_core::{
+    enforcement, planned_deep_sessions, Block, Command, DayPlan, Enforcement, Schedule, State,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -236,12 +238,20 @@ impl Device {
         ))?;
         let blocks: Vec<Block> =
             serde_json::from_value(rows).map_err(|e| Error::Protocol(e.to_string()))?;
+        // Day Plans and Schedules in the engine's form (absent keys mean none).
+        let state = self.online(backend.rest_post(&session, "rpc/state", json!({}), None))?;
+        let plans = |key: &str| state.get(key).cloned().unwrap_or_else(|| json!([]));
+        let day_plans: Vec<DayPlan> = serde_json::from_value(plans("day_plans"))
+            .map_err(|e| Error::Protocol(e.to_string()))?;
+        let schedules: Vec<Schedule> = serde_json::from_value(plans("schedules"))
+            .map_err(|e| Error::Protocol(e.to_string()))?;
         let server_now = self.fetch_server_now(&session)?;
         let changed = {
             let mut mirror = lock(&self.inner.mirror);
             let offset = (server_now - Utc::now()).num_milliseconds();
             mirror.set(OFFSET_KEY, &offset.to_string())?;
-            mirror.merge_blocks(&blocks)?
+            let merged = mirror.merge_blocks(&blocks)?;
+            mirror.replace_day_plans(&day_plans, &schedules)? || merged
         };
         if changed {
             self.emit(SyncEvent::StateChanged);
@@ -252,6 +262,23 @@ impl Device {
     /// The state this Device enforces (from the mirror; works offline).
     pub fn state(&self) -> Result<State> {
         lock(&self.inner.mirror).state()
+    }
+
+    /// The Day Plan for `date` (from the mirror; works offline): the saved one, or else the
+    /// draft its Schedule fills in.
+    pub fn day_plan(&self, date: NaiveDate) -> Result<Option<DayPlan>> {
+        Ok(cloister_core::day_plan(&self.state()?, date))
+    }
+
+    /// Deep Sessions that deep Slots have become by now (by the best estimate of server
+    /// time), as Blocks. Handed to the enforcement service, which only ever tightens: a
+    /// started Deep Session can't change, so it is safe to hand over once it has begun.
+    pub fn started_planned_sessions(&self) -> Result<Vec<Block>> {
+        let now = self.server_time();
+        Ok(planned_deep_sessions(&self.state()?, now)
+            .into_iter()
+            .filter(|b| b.starts_at <= now)
+            .collect())
     }
 
     /// The Enforcement for now, by the best estimate of server time.
