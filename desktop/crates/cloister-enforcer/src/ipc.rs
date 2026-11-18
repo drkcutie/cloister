@@ -1,7 +1,7 @@
 //! Local IPC: one JSON request per line over a Unix socket, one JSON response per line back.
 //!
-//! The socket is world-writable on purpose: the service only accepts commands that tighten
-//! enforcement, so any local user may start a Block but nobody can end one.
+//! The socket is world-writable on purpose: the service only accepts commands and syncs that
+//! tighten enforcement, so any local user may start a Block but nobody can end one.
 
 use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -22,6 +22,11 @@ pub enum Request {
     /// A rules-engine command (same JSON form as in the shared fixtures).
     Command {
         command: Command,
+    },
+    /// Blocks known from the backend (a Device's mirror). Merged so that it only tightens:
+    /// new Blocks are added, later ends taken, and nothing is shortened or dropped.
+    Sync {
+        blocks: Vec<Block>,
     },
     Status,
 }

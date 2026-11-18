@@ -5,7 +5,7 @@ use std::io;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use cloister_core::{decide, enforcement, Command, Enforcement, Outcome, State};
+use cloister_core::{decide, enforcement, Block, Command, Enforcement, Outcome, State, MAX_BLOCK};
 
 use crate::dns::SharedDomains;
 use crate::domains::DomainSet;
@@ -31,6 +31,8 @@ pub trait Clock: Send {
 
 /// Rejection code for commands the service never accepts over IPC.
 pub const LOOSENING_NOT_ACCEPTED: &str = "loosening_not_accepted";
+/// Rejection code for a synced Block that no rule could have produced.
+pub const INVALID_BLOCK: &str = "invalid_block";
 /// Rejection code when an accepted command couldn't be saved.
 pub const STORAGE_UNAVAILABLE: &str = "storage_unavailable";
 
@@ -84,6 +86,28 @@ impl<P: Platform, C: Clock> Service<P, C> {
                 enforcement: enforcement(&self.state, self.clock.now()),
             },
             Request::Command { command } => self.command(command),
+            Request::Sync { blocks } => self.sync(blocks),
+        }
+    }
+
+    /// Fold in Blocks from the backend. Only tightens (see [`merge_blocks`]).
+    fn sync(&mut self, blocks: Vec<Block>) -> Response {
+        let Some(merged) = merge_blocks(&self.state, &blocks) else {
+            return Response::Rejected {
+                reason: INVALID_BLOCK.into(),
+            };
+        };
+        if merged != self.state {
+            if let Err(e) = self.store.save(&merged) {
+                eprintln!("cloisterd: saving state failed: {e}");
+                return Response::Rejected {
+                    reason: STORAGE_UNAVAILABLE.into(),
+                };
+            }
+            self.state = merged;
+        }
+        Response::Accepted {
+            enforcement: self.tick(),
         }
     }
 
@@ -121,6 +145,23 @@ fn tightens(command: &Command) -> bool {
         Command::StartBlock { .. } | Command::ExtendBlock { .. } => true,
         Command::CancelBlock { .. } => false,
     }
+}
+
+/// `state` with `incoming` folded in: new Blocks are added and a later end is taken; nothing
+/// is shortened or removed. `None` if an incoming Block is impossible (empty or over 24 hours).
+pub fn merge_blocks(state: &State, incoming: &[Block]) -> Option<State> {
+    let mut next = state.clone();
+    for block in incoming {
+        let length = block.ends_at - block.starts_at;
+        if length <= chrono::Duration::zero() || length > MAX_BLOCK {
+            return None;
+        }
+        match next.blocks.iter_mut().find(|b| b.id == block.id) {
+            Some(known) => known.ends_at = known.ends_at.max(block.ends_at),
+            None => next.blocks.push(block.clone()),
+        }
+    }
+    Some(next)
 }
 
 /// A shared, empty domain set to hand to [`Service::open`] and the DNS filter.

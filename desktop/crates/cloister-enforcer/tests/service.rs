@@ -220,3 +220,46 @@ fn every_tick_reapplies_and_the_block_ends_on_time() {
     assert!(r.platform.last().blocked_domains.is_empty());
     assert!(!r.domains.read().unwrap().is_blocked("youtube.com"));
 }
+
+fn synced_block(id: &str, starts: &str, ends: &str) -> cloister_core::Block {
+    cloister_core::Block {
+        id: id.into(),
+        starts_at: starts.parse().unwrap(),
+        ends_at: ends.parse().unwrap(),
+        blocklists: vec!["forums".into(), "news".into(), "shopping".into(), "social".into(), "video".into()],
+        deep: true,
+    }
+}
+
+fn sync(r: &Running, blocks: Vec<cloister_core::Block>) -> Response {
+    ipc::send(&r.socket, &Request::Sync { blocks }).unwrap()
+}
+
+#[test]
+fn blocks_synced_from_another_device_are_enforced_and_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T09:00:00Z");
+    let r = start(&dir, &clock);
+    let answer = sync(&r, vec![synced_block("remote", "2026-01-05T08:50:00Z", "2026-01-05T10:00:00Z")]);
+    assert!(matches!(answer, Response::Accepted { .. }), "{answer:?}");
+    assert!(blocks_youtube(&r));
+    drop(r);
+    let again = start(&dir, &clock);
+    assert!(blocks_youtube(&again), "kept across a restart");
+}
+
+#[test]
+fn sync_can_only_tighten() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T09:00:00Z");
+    let r = start(&dir, &clock);
+    send(&r, start_block(60));
+    // A shorter copy of b1 and nothing else: b1 keeps its end.
+    sync(&r, vec![synced_block("b1", "2026-01-05T09:00:00Z", "2026-01-05T09:05:00Z")]);
+    clock.advance(Duration::minutes(30));
+    r.service.lock().unwrap().tick();
+    assert!(blocks_youtube(&r));
+    // An impossible Block (longer than 24 hours) is refused.
+    let answer = sync(&r, vec![synced_block("huge", "2026-01-05T09:00:00Z", "2026-02-05T09:00:00Z")]);
+    assert_eq!(answer, Response::Rejected { reason: "invalid_block".into() });
+}
