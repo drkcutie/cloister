@@ -147,6 +147,8 @@ fn tightens(command: &Command) -> bool {
         | Command::ExtendBlock { .. }
         | Command::RecordDepthRating { .. } => true,
         Command::CancelBlock { .. } => false,
+        // Moving a deep Slot or changing a Schedule can loosen today: the backend decides.
+        Command::WriteDayPlan { .. } | Command::PutSchedule { .. } => false,
     }
 }
 

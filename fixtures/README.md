@@ -88,6 +88,48 @@ A blocked domain always covers its subdomains, so `youtube.com` in the set block
 
 `intent` and `depth_rating` are omitted when absent (a plain Block, or a Deep Session not yet rated).
 
+`day_plans` and `schedules` are omitted when empty, so a state with only Blocks reads as above:
+
+```json
+{
+  "blocks": [],
+  "day_plans": [
+    {
+      "date": "2026-01-05",
+      "starts_at": "2026-01-05T08:00:00Z",
+      "ends_at": "2026-01-05T17:00:00Z",
+      "planned_deep_minutes": 150,
+      "slots": [
+        { "id": "s1", "starts_at": "2026-01-05T08:00:00Z", "ends_at": "2026-01-05T10:30:00Z",
+          "label": "Draft chapter 3", "deep": true, "depth_rating": 4 },
+        { "id": "s2", "starts_at": "2026-01-05T11:00:00Z", "ends_at": "2026-01-05T12:00:00Z",
+          "label": "Email and chat", "deep": false }
+      ]
+    }
+  ],
+  "schedules": [
+    {
+      "id": "weekdays", "time_zone": "UTC", "weekdays": [1, 2, 3, 4, 5],
+      "starts": "08:00", "ends": "17:00",
+      "slots": [ { "starts": "08:00", "ends": "11:00", "label": "Deep work", "deep": true } ]
+    }
+  ]
+}
+```
+
+- Day Plans are sorted by `date`, their Slots by start; Schedules by `id`, their Slots by start
+  and `weekdays` ascending (ISO: 1 = Monday ... 7 = Sunday). Labels are trimmed.
+- A Day Plan's `starts_at`/`ends_at` are the Workday's bounds. Until Workday Start and Shutdown
+  Time exist as settings they are given with the plan.
+- `planned_deep_minutes` is the total length of the deep Slots, in minutes.
+- A deep Slot **is** a Deep Session from its start to its end: it blocks the Distraction List
+  (like a deep Block with no extra Blocklists) and takes a Depth Rating by its Slot id. It is
+  not copied into `blocks`.
+- A date with no saved Day Plan runs on the Schedule covering its weekday. Times in a Schedule
+  are local to its `time_zone` (IANA); the Schedule's plan for a date has Slot ids
+  `<schedule id>-<date>-<n>` (n from 1, in order of start). Enforcement uses, for each
+  Schedule, the current date in its time zone.
+
 `blocklists` is sorted. Blocks are kept after they end (they are history, and later rules need them).
 
 **Commands** (`type` selects the command; unknown fields are errors)
@@ -97,7 +139,16 @@ A blocked domain always covers its subdomains, so `youtube.com` in the set block
 | `start_block` | `block_id`, `minutes`, `deep` (default `true`), `blocklists` (extra lists, default `[]`), `confirm_long` (default `false`), `client_time` (optional, ignored), `intent` (optional) | Starts at `server_time`. The Distraction List is always included. The Intent is trimmed; a blank one is dropped. |
 | `extend_block` | `block_id`, `ends_at` | Moves the end of an active Block later. The 24-hour cap still applies to the whole Block. |
 | `cancel_block` | `block_id` | Always rejected: a Block can't be cancelled. |
-| `record_depth_rating` | `block_id`, `rating` | Records a Deep Session's Depth Rating (1 to 5), once, at or after its end. |
+| `record_depth_rating` | `block_id`, `rating` | Records a Deep Session's Depth Rating (1 to 5), once, at or after its end. `block_id` may be a deep Slot's id. |
+| `write_day_plan` | `date`, `starts_at`, `ends_at`, `slots` (each `id`, `starts_at`, `ends_at`, `label`, `deep` (default `false`)) | Saves the Day Plan for `date`, replacing a saved one. Depth Ratings of unchanged Slots are kept. |
+| `put_schedule` | `schedule_id`, `time_zone`, `weekdays`, `starts`, `ends`, `slots` (each `starts`, `ends`, `label`, `deep` (default `false`)) | Creates or replaces a Schedule. If a day is running on the old Schedule (its start passed, its end not, no saved plan), that day's plan is first saved as its Day Plan, so the change applies from the next day. |
+
+**The ratchet** (`write_day_plan`). The plan in force for the date is the saved one, or the
+Schedule's once its `starts_at` has passed (before that the Schedule is only a draft). Against
+it, checked in this order after the shape checks: every deep Slot that has started must appear
+unchanged (`deep_session_has_started`); a deep Slot starting before server time must be an
+unchanged deep Slot (`slot_in_the_past`); Planned Deep Minutes must not go down
+(`slot_cannot_be_removed`).
 
 **Rejection reasons** (stable codes; UI copy is mapped from these, never shown raw)
 
@@ -116,6 +167,19 @@ A blocked domain always covers its subdomains, so `youtube.com` in the set block
 | `deep_session_not_ended` | `record_depth_rating` before the Deep Session's end. |
 | `invalid_depth_rating` | `rating` is outside 1 to 5. |
 | `depth_rating_already_recorded` | The Deep Session already has a Depth Rating. |
+| `invalid_day_plan` | The Day Plan ends at or before its start, or is longer than 24 hours. |
+| `invalid_slot` | A Slot's label is blank, it ends at or before its start, or it lies outside its day (for a Schedule: a time that isn't `HH:MM`). |
+| `slots_overlap` | Two Slots overlap (touching is fine). |
+| `duplicate_slot` | A Slot id repeats, or is used by a Slot of another day or by a Block. (`start_block` with a Slot's id is `duplicate_block`.) |
+| `deep_session_has_started` | A deep Slot that has started would change or go. |
+| `slot_in_the_past` | A new or changed deep Slot would start before server time. |
+| `slot_cannot_be_removed` | Planned Deep Minutes would go down. |
+| `invalid_schedule` | Weekdays outside 1 to 7 or repeated, `starts`/`ends` not `HH:MM` (00:00 to 23:59), or the day ends at or before its start. |
+| `unknown_time_zone` | `time_zone` isn't an IANA time zone. |
+| `schedules_overlap` | Another Schedule already covers one of the weekdays. |
+
+Checks run in this order: day bounds, Slots, overlap, ids, then the ratchet; for Schedules:
+time zone, weekdays and times, Slots, overlap, other Schedules.
 
 ## Adding a scenario
 

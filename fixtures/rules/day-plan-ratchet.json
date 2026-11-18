@@ -1,0 +1,435 @@
+{
+  "name": "day-plan-ratchet",
+  "description": "Deep Slots can move, but nothing lowers the day's Planned Deep Minutes, including after a deep Slot is added during the day.",
+  "initial_state": {
+    "blocks": [],
+    "day_plans": [
+      {
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "planned_deep_minutes": 210,
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T13:00:00Z",
+            "ends_at": "2026-01-05T14:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T12:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T15:00:00Z",
+            "ends_at": "2026-01-05T16:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "day_plans": [
+            {
+              "date": "2026-01-05",
+              "starts_at": "2026-01-05T08:00:00Z",
+              "ends_at": "2026-01-05T17:00:00Z",
+              "planned_deep_minutes": 210,
+              "slots": [
+                {
+                  "id": "s1",
+                  "starts_at": "2026-01-05T08:00:00Z",
+                  "ends_at": "2026-01-05T10:30:00Z",
+                  "label": "Draft chapter 3",
+                  "deep": true
+                },
+                {
+                  "id": "s3",
+                  "starts_at": "2026-01-05T11:00:00Z",
+                  "ends_at": "2026-01-05T12:00:00Z",
+                  "label": "Email and chat",
+                  "deep": false
+                },
+                {
+                  "id": "s2",
+                  "starts_at": "2026-01-05T15:00:00Z",
+                  "ends_at": "2026-01-05T16:00:00Z",
+                  "label": "Review notes",
+                  "deep": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T13:30:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains": [],
+          "blocked_apps": []
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T15:00:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains_include": [
+            "youtube.com",
+            "facebook.com"
+          ],
+          "blocked_domains_exclude": [
+            "github.com"
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T12:05:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T13:00:00Z",
+            "ends_at": "2026-01-05T13:30:00Z",
+            "label": "Review notes",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "slot_cannot_be_removed"
+      }
+    },
+    {
+      "server_time": "2026-01-05T12:05:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T13:00:00Z",
+            "ends_at": "2026-01-05T14:00:00Z",
+            "label": "Review notes",
+            "deep": false
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "slot_cannot_be_removed"
+      }
+    },
+    {
+      "server_time": "2026-01-05T12:05:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "slot_cannot_be_removed"
+      }
+    },
+    {
+      "server_time": "2026-01-05T12:10:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T15:00:00Z",
+            "ends_at": "2026-01-05T16:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          },
+          {
+            "id": "s4",
+            "starts_at": "2026-01-05T16:00:00Z",
+            "ends_at": "2026-01-05T16:45:00Z",
+            "label": "Outline talk",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "day_plans": [
+            {
+              "date": "2026-01-05",
+              "starts_at": "2026-01-05T08:00:00Z",
+              "ends_at": "2026-01-05T17:00:00Z",
+              "planned_deep_minutes": 255,
+              "slots": [
+                {
+                  "id": "s1",
+                  "starts_at": "2026-01-05T08:00:00Z",
+                  "ends_at": "2026-01-05T10:30:00Z",
+                  "label": "Draft chapter 3",
+                  "deep": true
+                },
+                {
+                  "id": "s3",
+                  "starts_at": "2026-01-05T11:00:00Z",
+                  "ends_at": "2026-01-05T12:00:00Z",
+                  "label": "Email and chat",
+                  "deep": false
+                },
+                {
+                  "id": "s2",
+                  "starts_at": "2026-01-05T15:00:00Z",
+                  "ends_at": "2026-01-05T16:00:00Z",
+                  "label": "Review notes",
+                  "deep": true
+                },
+                {
+                  "id": "s4",
+                  "starts_at": "2026-01-05T16:00:00Z",
+                  "ends_at": "2026-01-05T16:45:00Z",
+                  "label": "Outline talk",
+                  "deep": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T12:15:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T15:00:00Z",
+            "ends_at": "2026-01-05T16:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "slot_cannot_be_removed"
+      }
+    },
+    {
+      "server_time": "2026-01-05T12:15:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T14:00:00Z",
+            "ends_at": "2026-01-05T15:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          },
+          {
+            "id": "s4",
+            "starts_at": "2026-01-05T15:00:00Z",
+            "ends_at": "2026-01-05T15:45:00Z",
+            "label": "Outline talk",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "day_plans": [
+            {
+              "date": "2026-01-05",
+              "starts_at": "2026-01-05T08:00:00Z",
+              "ends_at": "2026-01-05T17:00:00Z",
+              "planned_deep_minutes": 255,
+              "slots": [
+                {
+                  "id": "s1",
+                  "starts_at": "2026-01-05T08:00:00Z",
+                  "ends_at": "2026-01-05T10:30:00Z",
+                  "label": "Draft chapter 3",
+                  "deep": true
+                },
+                {
+                  "id": "s3",
+                  "starts_at": "2026-01-05T11:00:00Z",
+                  "ends_at": "2026-01-05T12:00:00Z",
+                  "label": "Email and chat",
+                  "deep": false
+                },
+                {
+                  "id": "s2",
+                  "starts_at": "2026-01-05T14:00:00Z",
+                  "ends_at": "2026-01-05T15:00:00Z",
+                  "label": "Review notes",
+                  "deep": true
+                },
+                {
+                  "id": "s4",
+                  "starts_at": "2026-01-05T15:00:00Z",
+                  "ends_at": "2026-01-05T15:45:00Z",
+                  "label": "Outline talk",
+                  "deep": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

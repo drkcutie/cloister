@@ -1,0 +1,557 @@
+{
+  "name": "day-plan-started-deep-session",
+  "description": "A deep Slot that has started can't change, no deep Slot can start before server time, and a deep Slot's Deep Session takes a Depth Rating once it ends.",
+  "initial_state": {
+    "blocks": [],
+    "day_plans": [
+      {
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "planned_deep_minutes": 210,
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T13:00:00Z",
+            "ends_at": "2026-01-05T14:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T09:00:00Z",
+            "ends_at": "2026-01-05T11:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:30:00Z",
+            "ends_at": "2026-01-05T12:30:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T13:00:00Z",
+            "ends_at": "2026-01-05T14:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "deep_session_has_started"
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:45:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T13:00:00Z",
+            "ends_at": "2026-01-05T14:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "deep_session_has_started"
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter four",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T13:00:00Z",
+            "ends_at": "2026-01-05T14:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "deep_session_has_started"
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T13:00:00Z",
+            "ends_at": "2026-01-05T14:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "deep_session_has_started"
+      }
+    },
+    {
+      "server_time": "2026-01-05T12:30:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T12:00:00Z",
+            "ends_at": "2026-01-05T13:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "slot_in_the_past"
+      }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T13:00:00Z",
+            "ends_at": "2026-01-05T14:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          },
+          {
+            "id": "s4",
+            "starts_at": "2026-01-05T09:30:00Z",
+            "ends_at": "2026-01-05T10:00:00Z",
+            "label": "Read",
+            "deep": false
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "slots_overlap"
+      }
+    },
+    {
+      "server_time": "2026-01-05T11:30:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T11:00:00Z",
+            "ends_at": "2026-01-05T11:30:00Z",
+            "label": "Email and chat",
+            "deep": true
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T13:00:00Z",
+            "ends_at": "2026-01-05T14:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "slot_in_the_past"
+      }
+    },
+    {
+      "server_time": "2026-01-05T11:30:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T10:30:00Z",
+            "ends_at": "2026-01-05T11:30:00Z",
+            "label": "Inbox zero",
+            "deep": false
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T13:00:00Z",
+            "ends_at": "2026-01-05T14:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          },
+          {
+            "id": "s4",
+            "starts_at": "2026-01-05T11:30:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Sketch figures",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "day_plans": [
+            {
+              "date": "2026-01-05",
+              "starts_at": "2026-01-05T08:00:00Z",
+              "ends_at": "2026-01-05T17:00:00Z",
+              "planned_deep_minutes": 240,
+              "slots": [
+                {
+                  "id": "s1",
+                  "starts_at": "2026-01-05T08:00:00Z",
+                  "ends_at": "2026-01-05T10:30:00Z",
+                  "label": "Draft chapter 3",
+                  "deep": true
+                },
+                {
+                  "id": "s3",
+                  "starts_at": "2026-01-05T10:30:00Z",
+                  "ends_at": "2026-01-05T11:30:00Z",
+                  "label": "Inbox zero",
+                  "deep": false
+                },
+                {
+                  "id": "s4",
+                  "starts_at": "2026-01-05T11:30:00Z",
+                  "ends_at": "2026-01-05T12:00:00Z",
+                  "label": "Sketch figures",
+                  "deep": true
+                },
+                {
+                  "id": "s2",
+                  "starts_at": "2026-01-05T13:00:00Z",
+                  "ends_at": "2026-01-05T14:00:00Z",
+                  "label": "Review notes",
+                  "deep": true
+                }
+              ]
+            }
+          ]
+        },
+        "enforcement": {
+          "blocked_domains_include": [
+            "youtube.com",
+            "facebook.com"
+          ],
+          "blocked_domains_exclude": [
+            "github.com"
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": {
+        "type": "record_depth_rating",
+        "block_id": "s1",
+        "rating": 4
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "deep_session_not_ended"
+      }
+    },
+    {
+      "server_time": "2026-01-05T11:40:00Z",
+      "command": {
+        "type": "record_depth_rating",
+        "block_id": "s3",
+        "rating": 4
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "not_a_deep_session"
+      }
+    },
+    {
+      "server_time": "2026-01-05T11:40:00Z",
+      "command": {
+        "type": "record_depth_rating",
+        "block_id": "s1",
+        "rating": 4
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "day_plans": [
+            {
+              "date": "2026-01-05",
+              "starts_at": "2026-01-05T08:00:00Z",
+              "ends_at": "2026-01-05T17:00:00Z",
+              "planned_deep_minutes": 240,
+              "slots": [
+                {
+                  "id": "s1",
+                  "starts_at": "2026-01-05T08:00:00Z",
+                  "ends_at": "2026-01-05T10:30:00Z",
+                  "label": "Draft chapter 3",
+                  "deep": true,
+                  "depth_rating": 4
+                },
+                {
+                  "id": "s3",
+                  "starts_at": "2026-01-05T10:30:00Z",
+                  "ends_at": "2026-01-05T11:30:00Z",
+                  "label": "Inbox zero",
+                  "deep": false
+                },
+                {
+                  "id": "s4",
+                  "starts_at": "2026-01-05T11:30:00Z",
+                  "ends_at": "2026-01-05T12:00:00Z",
+                  "label": "Sketch figures",
+                  "deep": true
+                },
+                {
+                  "id": "s2",
+                  "starts_at": "2026-01-05T13:00:00Z",
+                  "ends_at": "2026-01-05T14:00:00Z",
+                  "label": "Review notes",
+                  "deep": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T11:45:00Z",
+      "command": {
+        "type": "record_depth_rating",
+        "block_id": "s1",
+        "rating": 5
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "depth_rating_already_recorded"
+      }
+    },
+    {
+      "server_time": "2026-01-05T11:45:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          },
+          {
+            "id": "s3",
+            "starts_at": "2026-01-05T10:30:00Z",
+            "ends_at": "2026-01-05T11:30:00Z",
+            "label": "Inbox zero",
+            "deep": false
+          },
+          {
+            "id": "s4",
+            "starts_at": "2026-01-05T11:30:00Z",
+            "ends_at": "2026-01-05T12:00:00Z",
+            "label": "Sketch figures",
+            "deep": true
+          },
+          {
+            "id": "s2",
+            "starts_at": "2026-01-05T14:00:00Z",
+            "ends_at": "2026-01-05T15:00:00Z",
+            "label": "Review notes",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "day_plans": [
+            {
+              "date": "2026-01-05",
+              "starts_at": "2026-01-05T08:00:00Z",
+              "ends_at": "2026-01-05T17:00:00Z",
+              "planned_deep_minutes": 240,
+              "slots": [
+                {
+                  "id": "s1",
+                  "starts_at": "2026-01-05T08:00:00Z",
+                  "ends_at": "2026-01-05T10:30:00Z",
+                  "label": "Draft chapter 3",
+                  "deep": true,
+                  "depth_rating": 4
+                },
+                {
+                  "id": "s3",
+                  "starts_at": "2026-01-05T10:30:00Z",
+                  "ends_at": "2026-01-05T11:30:00Z",
+                  "label": "Inbox zero",
+                  "deep": false
+                },
+                {
+                  "id": "s4",
+                  "starts_at": "2026-01-05T11:30:00Z",
+                  "ends_at": "2026-01-05T12:00:00Z",
+                  "label": "Sketch figures",
+                  "deep": true
+                },
+                {
+                  "id": "s2",
+                  "starts_at": "2026-01-05T14:00:00Z",
+                  "ends_at": "2026-01-05T15:00:00Z",
+                  "label": "Review notes",
+                  "deep": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

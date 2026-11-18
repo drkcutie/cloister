@@ -9,6 +9,7 @@
 //! Behaviour is specified by the shared JSON scenarios in `fixtures/rules`.
 
 mod catalog;
+mod day_plan;
 
 use std::collections::BTreeSet;
 
@@ -16,6 +17,10 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 pub use catalog::{related_domains, Blocklist, BlocklistKind, Catalog};
+pub use day_plan::{
+    day_plan, planned_deep_minutes, planned_deep_sessions, schedule_plan, DayPlan, Schedule,
+    ScheduleSlot, Slot, SlotInput,
+};
 
 /// Everything the engine knows. Grows as later rules arrive (Day Plans, settings, rituals...).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -23,6 +28,12 @@ pub use catalog::{related_domains, Blocklist, BlocklistKind, Catalog};
 pub struct State {
     #[serde(default)]
     pub blocks: Vec<Block>,
+    /// Saved Day Plans, sorted by date.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub day_plans: Vec<DayPlan>,
+    /// Schedules, sorted by id.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub schedules: Vec<Schedule>,
 }
 
 /// A period during which Blocklists are enforced. Its end can only move later.
@@ -85,6 +96,23 @@ pub enum Command {
     CancelBlock { block_id: String },
     /// Record the Depth Rating (1 to 5) of a Deep Session that has ended. Once only.
     RecordDepthRating { block_id: String, rating: u8 },
+    /// Save the Day Plan for `date`, replacing any saved one. Planned Deep Minutes can't go
+    /// down, a started Deep Session can't change, and no deep Slot can start in the past.
+    WriteDayPlan {
+        date: chrono::NaiveDate,
+        starts_at: DateTime<Utc>,
+        ends_at: DateTime<Utc>,
+        slots: Vec<SlotInput>,
+    },
+    /// Create or replace a Schedule. A day already running on the old Schedule keeps its plan.
+    PutSchedule {
+        schedule_id: String,
+        time_zone: String,
+        weekdays: Vec<u8>,
+        starts: String,
+        ends: String,
+        slots: Vec<ScheduleSlot>,
+    },
 }
 
 fn default_true() -> bool {
@@ -108,6 +136,16 @@ pub enum Reason {
     DeepSessionNotEnded,
     InvalidDepthRating,
     DepthRatingAlreadyRecorded,
+    InvalidDayPlan,
+    InvalidSlot,
+    SlotsOverlap,
+    DuplicateSlot,
+    DeepSessionHasStarted,
+    SlotInThePast,
+    SlotCannotBeRemoved,
+    InvalidSchedule,
+    UnknownTimeZone,
+    SchedulesOverlap,
 }
 
 impl Reason {
@@ -126,6 +164,16 @@ impl Reason {
             Reason::DeepSessionNotEnded => "deep_session_not_ended",
             Reason::InvalidDepthRating => "invalid_depth_rating",
             Reason::DepthRatingAlreadyRecorded => "depth_rating_already_recorded",
+            Reason::InvalidDayPlan => "invalid_day_plan",
+            Reason::InvalidSlot => "invalid_slot",
+            Reason::SlotsOverlap => "slots_overlap",
+            Reason::DuplicateSlot => "duplicate_slot",
+            Reason::DeepSessionHasStarted => "deep_session_has_started",
+            Reason::SlotInThePast => "slot_in_the_past",
+            Reason::SlotCannotBeRemoved => "slot_cannot_be_removed",
+            Reason::InvalidSchedule => "invalid_schedule",
+            Reason::UnknownTimeZone => "unknown_time_zone",
+            Reason::SchedulesOverlap => "schedules_overlap",
         }
     }
 }
@@ -221,7 +269,12 @@ fn apply(state: &State, command: &Command, now: DateTime<Utc>) -> Result<State, 
             if blocklists.iter().any(|id| catalog.get(id).is_none()) {
                 return Err(Reason::UnknownBlocklist);
             }
-            if state.blocks.iter().any(|b| &b.id == block_id) {
+            if state.blocks.iter().any(|b| &b.id == block_id)
+                || state
+                    .day_plans
+                    .iter()
+                    .any(|p| p.slots.iter().any(|s| &s.id == block_id))
+            {
                 return Err(Reason::DuplicateBlock);
             }
             let mut ids: BTreeSet<String> = catalog.distraction_ids().collect();
@@ -263,21 +316,51 @@ fn apply(state: &State, command: &Command, now: DateTime<Utc>) -> Result<State, 
             return Err(Reason::BlockCannotBeCancelled);
         }
         Command::RecordDepthRating { block_id, rating } => {
-            let block = find(&mut next, block_id)?;
-            if !block.deep {
+            // A Deep Session is a deep Block or a deep Slot of a saved Day Plan.
+            let (deep, ends_at, recorded) = match find(&mut next, block_id) {
+                Ok(block) => (block.deep, block.ends_at, &mut block.depth_rating),
+                Err(e) => match day_plan::find_slot(&mut next, block_id) {
+                    Some(slot) => (slot.deep, slot.ends_at, &mut slot.depth_rating),
+                    None => return Err(e),
+                },
+            };
+            if !deep {
                 return Err(Reason::NotADeepSession);
             }
-            if now < block.ends_at {
+            if now < ends_at {
                 return Err(Reason::DeepSessionNotEnded);
             }
             if !(1..=5).contains(rating) {
                 return Err(Reason::InvalidDepthRating);
             }
-            if block.depth_rating.is_some() {
+            if recorded.is_some() {
                 return Err(Reason::DepthRatingAlreadyRecorded);
             }
-            block.depth_rating = Some(*rating);
+            *recorded = Some(*rating);
         }
+        Command::WriteDayPlan {
+            date,
+            starts_at,
+            ends_at,
+            slots,
+        } => day_plan::write_day_plan(&mut next, *date, *starts_at, *ends_at, slots, now)?,
+        Command::PutSchedule {
+            schedule_id,
+            time_zone,
+            weekdays,
+            starts,
+            ends,
+            slots,
+        } => day_plan::put_schedule(
+            &mut next,
+            schedule_id,
+            time_zone,
+            weekdays,
+            starts,
+            ends,
+            slots,
+            now,
+        )?,
     }
     Ok(next)
 }
@@ -295,7 +378,13 @@ pub fn enforcement(state: &State, server_time: DateTime<Utc>) -> Enforcement {
     let catalog = Catalog::builtin();
     let mut domains = BTreeSet::new();
     let mut apps = BTreeSet::new();
-    for block in state.blocks.iter().filter(|b| b.is_active(server_time)) {
+    let planned = planned_deep_sessions(state, server_time);
+    for block in state
+        .blocks
+        .iter()
+        .chain(&planned)
+        .filter(|b| b.is_active(server_time))
+    {
         for list in block.blocklists.iter().filter_map(|id| catalog.get(id)) {
             for domain in &list.domains {
                 domains.insert(domain.clone());
