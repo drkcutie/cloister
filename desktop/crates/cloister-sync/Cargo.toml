@@ -1,0 +1,23 @@
+[package]
+name = "cloister-sync"
+description = "Cloister sync: sign-in, the local SQLite mirror, commands to the backend and Realtime updates."
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+chrono.workspace = true
+cloister-core = { path = "../cloister-core" }
+serde.workspace = true
+serde_json.workspace = true
+base64 = "0.22"
+getrandom = "0.2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
+tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+ureq = { version = "2", features = ["json"] }
+url = "2"
+
+[dev-dependencies]
+postgres = { version = "0.19", features = ["with-serde_json-1"] }
+tempfile = "3"

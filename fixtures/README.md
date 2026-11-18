@@ -7,7 +7,7 @@ against every implementation of the rules:
 | --- | --- |
 | Rust (`desktop/crates/cloister-core`) | `desktop/crates/cloister-core/tests/fixtures.rs` (`cargo test -p cloister-core`) |
 | Kotlin (Android) | to be added; must read these files unchanged |
-| Postgres triggers (Supabase) | to be added; must read these files unchanged |
+| Postgres triggers (Supabase) | `desktop/crates/cloister-sync/tests/postgres_fixtures.rs` (`backend/scripts/test.sh`, needs Docker) |
 
 A rule is done when every runner agrees on every scenario. Don't copy fixtures into other
 directories: point each runner at this directory.
