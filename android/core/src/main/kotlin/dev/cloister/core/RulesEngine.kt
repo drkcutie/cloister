@@ -99,6 +99,12 @@ object RulesEngine {
             throw Rejection(Reason.BlockCannotBeCancelled)
         }
         is Command.RecordDepthRating -> recordDepthRating(state, command, now)
+        is Command.RecordBreach ->
+            if (state.breaches.any { it.id == command.breachId }) state
+            else state.copy(
+                breaches = (state.breaches + Breach(command.breachId, command.kind, now))
+                    .sortedWith(compareBy({ it.occurredAt }, { it.id })),
+            )
         is Command.WriteDayPlan ->
             DayPlans.writeDayPlan(state, command.date, command.startsAt, command.endsAt, command.slots, now)
         is Command.PutSchedule -> DayPlans.putSchedule(state, command, now)

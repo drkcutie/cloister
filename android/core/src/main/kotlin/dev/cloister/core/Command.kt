@@ -86,6 +86,14 @@ sealed interface Command {
         )
     }
 
+    /** Record a Breach at server time. Recording the same id again changes nothing. */
+    data class RecordBreach(val breachId: String, val kind: BreachKind, val clientTime: Instant? = null) : Command {
+        override fun toJson() = obj(
+            "type" to str("record_breach"), "breach_id" to str(breachId), "kind" to str(kind.code),
+            "client_time" to clientTime?.let(::time),
+        )
+    }
+
     data class WriteDayPlan(
         val date: LocalDate,
         val startsAt: Instant,
@@ -145,6 +153,8 @@ sealed interface Command {
                     "opt_out_of_blocklist" -> OptOutOfBlocklist(string("blocklist"))
                     "opt_in_to_blocklist" -> OptInToBlocklist(string("blocklist"))
                     "start_quit_social_block" -> StartQuitSocialBlock(string("block_id"), bool("confirm_long", false))
+                    "record_breach" ->
+                        RecordBreach(string("breach_id"), BreachKind.of(string("kind")), instantOrNull("client_time"))
                     "write_day_plan" -> WriteDayPlan(
                         date("date"), instant("starts_at"), instant("ends_at"),
                         objects("slots", read = SlotInput::fromJson),

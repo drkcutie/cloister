@@ -21,6 +21,8 @@ data class State(
     val blocklistEntries: List<BlocklistEntry> = emptyList(),
     val blocklistRemovals: List<BlocklistRemoval> = emptyList(),
     val blocklistOptOuts: List<BlocklistOptOut> = emptyList(),
+    /** Breaches recorded, sorted by time then id. */
+    val breaches: List<Breach> = emptyList(),
 ) {
     fun toJson(): JsonObject = obj(
         "blocks" to arr(blocks) { it.toJson() },
@@ -30,6 +32,7 @@ data class State(
         "blocklist_entries" to nonEmpty(blocklistEntries) { arr(it) { e -> e.toJson() } },
         "blocklist_removals" to nonEmpty(blocklistRemovals) { arr(it) { r -> r.toJson() } },
         "blocklist_opt_outs" to nonEmpty(blocklistOptOuts) { arr(it) { o -> o.toJson() } },
+        "breaches" to nonEmpty(breaches) { arr(it) { b -> b.toJson() } },
     )
 
     companion object {
@@ -42,6 +45,7 @@ data class State(
                 blocklistEntries = objects("blocklist_entries", emptyList(), BlocklistEntry::fromJson),
                 blocklistRemovals = objects("blocklist_removals", emptyList(), BlocklistRemoval::fromJson),
                 blocklistOptOuts = objects("blocklist_opt_outs", emptyList(), BlocklistOptOut::fromJson),
+                breaches = objects("breaches", emptyList(), Breach::fromJson),
             ).also { done() }
         }
     }
@@ -270,6 +274,28 @@ data class ScheduleSlot(val starts: String, val ends: String, val label: String,
     companion object {
         fun fromJson(el: JsonElement) = Fields(el, "schedule slot").run {
             ScheduleSlot(string("starts"), string("ends"), string("label"), bool("deep", false)).also { done() }
+        }
+    }
+}
+
+/** How a Device's enforcement was disabled. */
+enum class BreachKind(val code: String) {
+    VpnTurnedOff("vpn_turned_off"),
+    AppBlockerTurnedOff("app_blocker_turned_off");
+
+    companion object {
+        fun of(code: String) = entries.firstOrNull { it.code == code }
+            ?: throw JsonFormException("unknown Breach kind `$code`")
+    }
+}
+
+/** A recorded event in which a Device's enforcement was disabled during a Block. No penalty follows. */
+data class Breach(val id: String, val kind: BreachKind, val occurredAt: Instant) {
+    fun toJson() = obj("id" to str(id), "kind" to str(kind.code), "occurred_at" to time(occurredAt))
+
+    companion object {
+        fun fromJson(el: JsonElement) = Fields(el, "breach").run {
+            Breach(string("id"), BreachKind.of(string("kind")), instant("occurred_at")).also { done() }
         }
     }
 }

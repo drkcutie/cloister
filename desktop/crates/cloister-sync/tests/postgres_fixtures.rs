@@ -190,6 +190,19 @@ fn sign_in_with_state(tx: &mut Transaction, scenario: &str, initial_state: &Valu
         )
         .unwrap();
     }
+    for b in &state.breaches {
+        tx.execute(
+            "insert into public.breaches (user_id, id, kind, occurred_at)
+             values ($1::text::uuid, $2, $3, $4::text::timestamptz)",
+            &[
+                &user_id,
+                &b.id,
+                &serde_json::to_value(b.kind).unwrap().as_str().unwrap(),
+                &b.occurred_at.to_rfc3339(),
+            ],
+        )
+        .unwrap();
+    }
     tx.batch_execute("set local session_replication_role = origin")
         .unwrap();
     let claims = json!({ "sub": user_id, "role": "authenticated" }).to_string();

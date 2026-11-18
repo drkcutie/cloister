@@ -55,6 +55,9 @@ pub struct State {
     /// Distraction List categories opted out of, pending or in force, sorted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocklist_opt_outs: Vec<BlocklistOptOut>,
+    /// Breaches recorded, sorted by time then id.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub breaches: Vec<Breach>,
 }
 
 impl Default for State {
@@ -67,8 +70,29 @@ impl Default for State {
             blocklist_entries: Vec::new(),
             blocklist_removals: Vec::new(),
             blocklist_opt_outs: Vec::new(),
+            breaches: Vec::new(),
         }
     }
+}
+
+/// How a Device's enforcement was disabled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BreachKind {
+    /// The Android VPN (DNS filter) was turned off.
+    VpnTurnedOff,
+    /// The Android app blocker (Accessibility service) was turned off.
+    AppBlockerTurnedOff,
+}
+
+/// A recorded event in which a Device's enforcement was disabled during a Block.
+/// Recording it is the only consequence: there is no penalty.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Breach {
+    pub id: String,
+    pub kind: BreachKind,
+    pub occurred_at: DateTime<Utc>,
 }
 
 fn default_time_zone() -> String {
@@ -175,6 +199,14 @@ pub enum Command {
         block_id: String,
         #[serde(default)]
         confirm_long: bool,
+    },
+    /// Record a Breach at server time. Recording the same id again changes nothing.
+    RecordBreach {
+        breach_id: String,
+        kind: BreachKind,
+        /// The Device's own clock. Recorded for diagnosis only; never trusted.
+        #[serde(default)]
+        client_time: Option<DateTime<Utc>>,
     },
     /// Save the Day Plan for `date`, replacing any saved one. Planned Deep Minutes can't go
     /// down, a started Deep Session can't change, and no deep Slot can start in the past.
@@ -465,6 +497,21 @@ fn apply(state: &State, command: &Command, now: DateTime<Utc>) -> Result<State, 
                 return Err(Reason::DepthRatingAlreadyRecorded);
             }
             *recorded = Some(*rating);
+        }
+        Command::RecordBreach {
+            breach_id,
+            kind,
+            client_time: _,
+        } => {
+            if !next.breaches.iter().any(|b| &b.id == breach_id) {
+                next.breaches.push(Breach {
+                    id: breach_id.clone(),
+                    kind: *kind,
+                    occurred_at: now,
+                });
+                next.breaches
+                    .sort_by(|a, b| (a.occurred_at, &a.id).cmp(&(b.occurred_at, &b.id)));
+            }
         }
         Command::WriteDayPlan {
             date,

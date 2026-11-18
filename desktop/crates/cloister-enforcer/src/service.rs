@@ -153,6 +153,7 @@ fn tightens(command: &Command) -> bool {
         Command::StartBlock { .. }
         | Command::ExtendBlock { .. }
         | Command::RecordDepthRating { .. }
+        | Command::RecordBreach { .. }
         | Command::StartQuitSocialBlock { .. }
         | Command::AddBlocklistEntry { .. }
         | Command::OptInToBlocklist { .. } => true,
