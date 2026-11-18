@@ -1,0 +1,252 @@
+{
+  "name": "schedule-change-takes-effect-next-day",
+  "description": "Changing a Schedule while a day runs on it leaves that day's plan as it was (saved as its Day Plan); the change applies from the next day.",
+  "initial_state": {
+    "blocks": [],
+    "schedules": [
+      {
+        "id": "weekdays",
+        "time_zone": "UTC",
+        "weekdays": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": [
+          {
+            "starts": "08:00",
+            "ends": "11:00",
+            "label": "Deep work",
+            "deep": true
+          },
+          {
+            "starts": "11:00",
+            "ends": "12:00",
+            "label": "Email and chat",
+            "deep": false
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "weekdays",
+        "time_zone": "UTC",
+        "weekdays": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": [
+          {
+            "starts": "11:00",
+            "ends": "12:00",
+            "label": "Email and chat",
+            "deep": false
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "day_plans": [
+            {
+              "date": "2026-01-05",
+              "starts_at": "2026-01-05T08:00:00Z",
+              "ends_at": "2026-01-05T17:00:00Z",
+              "planned_deep_minutes": 180,
+              "slots": [
+                {
+                  "id": "weekdays-2026-01-05-1",
+                  "starts_at": "2026-01-05T08:00:00Z",
+                  "ends_at": "2026-01-05T11:00:00Z",
+                  "label": "Deep work",
+                  "deep": true
+                },
+                {
+                  "id": "weekdays-2026-01-05-2",
+                  "starts_at": "2026-01-05T11:00:00Z",
+                  "ends_at": "2026-01-05T12:00:00Z",
+                  "label": "Email and chat",
+                  "deep": false
+                }
+              ]
+            }
+          ],
+          "schedules": [
+            {
+              "id": "weekdays",
+              "time_zone": "UTC",
+              "weekdays": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "starts": "08:00",
+              "ends": "17:00",
+              "slots": [
+                {
+                  "starts": "11:00",
+                  "ends": "12:00",
+                  "label": "Email and chat",
+                  "deep": false
+                }
+              ]
+            }
+          ]
+        },
+        "enforcement": {
+          "blocked_domains_include": [
+            "youtube.com",
+            "facebook.com"
+          ],
+          "blocked_domains_exclude": [
+            "github.com"
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T10:30:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains_include": [
+            "youtube.com",
+            "facebook.com"
+          ],
+          "blocked_domains_exclude": [
+            "github.com"
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-06T09:00:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains": [],
+          "blocked_apps": []
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-06T07:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "weekdays",
+        "time_zone": "UTC",
+        "weekdays": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": [
+          {
+            "starts": "08:00",
+            "ends": "11:00",
+            "label": "Deep work",
+            "deep": true
+          },
+          {
+            "starts": "11:00",
+            "ends": "12:00",
+            "label": "Email and chat",
+            "deep": false
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "day_plans": [
+            {
+              "date": "2026-01-05",
+              "starts_at": "2026-01-05T08:00:00Z",
+              "ends_at": "2026-01-05T17:00:00Z",
+              "planned_deep_minutes": 180,
+              "slots": [
+                {
+                  "id": "weekdays-2026-01-05-1",
+                  "starts_at": "2026-01-05T08:00:00Z",
+                  "ends_at": "2026-01-05T11:00:00Z",
+                  "label": "Deep work",
+                  "deep": true
+                },
+                {
+                  "id": "weekdays-2026-01-05-2",
+                  "starts_at": "2026-01-05T11:00:00Z",
+                  "ends_at": "2026-01-05T12:00:00Z",
+                  "label": "Email and chat",
+                  "deep": false
+                }
+              ]
+            }
+          ],
+          "schedules": [
+            {
+              "id": "weekdays",
+              "time_zone": "UTC",
+              "weekdays": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "starts": "08:00",
+              "ends": "17:00",
+              "slots": [
+                {
+                  "starts": "08:00",
+                  "ends": "11:00",
+                  "label": "Deep work",
+                  "deep": true
+                },
+                {
+                  "starts": "11:00",
+                  "ends": "12:00",
+                  "label": "Email and chat",
+                  "deep": false
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-06T09:00:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains_include": [
+            "youtube.com",
+            "facebook.com"
+          ],
+          "blocked_domains_exclude": [
+            "github.com"
+          ]
+        }
+      }
+    }
+  ]
+}

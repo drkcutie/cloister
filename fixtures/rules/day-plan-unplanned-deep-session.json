@@ -1,0 +1,130 @@
+{
+  "name": "day-plan-unplanned-deep-session",
+  "description": "An unplanned Deep Session can start any time, even over a deep Slot, and doesn't change Planned Deep Minutes.",
+  "initial_state": {
+    "blocks": [],
+    "day_plans": [
+      {
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "planned_deep_minutes": 150,
+        "slots": [
+          {
+            "id": "s1",
+            "starts_at": "2026-01-05T08:00:00Z",
+            "ends_at": "2026-01-05T10:30:00Z",
+            "label": "Draft chapter 3",
+            "deep": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T12:00:00Z",
+      "command": {
+        "type": "start_block",
+        "block_id": "b1",
+        "minutes": 60,
+        "intent": "Fix the build"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T12:00:00Z",
+              "ends_at": "2026-01-05T13:00:00Z",
+              "blocklists": [
+                "forums",
+                "news",
+                "shopping",
+                "social",
+                "video"
+              ],
+              "deep": true,
+              "intent": "Fix the build"
+            }
+          ],
+          "day_plans": [
+            {
+              "date": "2026-01-05",
+              "starts_at": "2026-01-05T08:00:00Z",
+              "ends_at": "2026-01-05T17:00:00Z",
+              "planned_deep_minutes": 150,
+              "slots": [
+                {
+                  "id": "s1",
+                  "starts_at": "2026-01-05T08:00:00Z",
+                  "ends_at": "2026-01-05T10:30:00Z",
+                  "label": "Draft chapter 3",
+                  "deep": true
+                }
+              ]
+            }
+          ]
+        },
+        "enforcement": {
+          "blocked_domains_include": [
+            "youtube.com",
+            "facebook.com"
+          ],
+          "blocked_domains_exclude": [
+            "github.com"
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T12:30:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": []
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "deep_session_has_started"
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": {
+        "type": "start_block",
+        "block_id": "b2",
+        "minutes": 30
+      },
+      "expect": {
+        "outcome": "accepted"
+      }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains_include": [
+            "youtube.com",
+            "facebook.com"
+          ],
+          "blocked_domains_exclude": [
+            "github.com"
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T10:30:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains": [],
+          "blocked_apps": []
+        }
+      }
+    }
+  ]
+}

@@ -159,6 +159,8 @@ fn tightens(command: &Command) -> bool {
         Command::CancelBlock { .. }
         | Command::RemoveBlocklistEntry { .. }
         | Command::OptOutOfBlocklist { .. } => false,
+        // Moving a deep Slot or changing a Schedule can loosen today: the backend decides.
+        Command::WriteDayPlan { .. } | Command::PutSchedule { .. } => false,
     }
 }
 

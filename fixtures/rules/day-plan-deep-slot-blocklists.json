@@ -1,0 +1,49 @@
+{
+  "name": "day-plan-deep-slot-blocklists",
+  "description": "A running deep Slot blocks what a deep Block would: the Distraction List categories not opted out at the Slot's start (an opt-out never shrinks a running Slot), with Blocklist additions, minus removals in force.",
+  "initial_state": {
+    "blocks": [],
+    "day_plans": [
+      {
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-06T02:00:00Z",
+        "planned_deep_minutes": 120,
+        "slots": [
+          { "id": "late", "starts_at": "2026-01-05T23:00:00Z", "ends_at": "2026-01-06T01:00:00Z", "label": "Late draft", "deep": true }
+        ]
+      },
+      {
+        "date": "2026-01-06",
+        "starts_at": "2026-01-06T08:00:00Z",
+        "ends_at": "2026-01-06T17:00:00Z",
+        "planned_deep_minutes": 60,
+        "slots": [
+          { "id": "morning", "starts_at": "2026-01-06T09:00:00Z", "ends_at": "2026-01-06T10:00:00Z", "label": "Morning draft", "deep": true }
+        ]
+      }
+    ],
+    "blocklist_entries": [{ "blocklist": "video", "kind": "domain", "entry": "example.org" }],
+    "blocklist_removals": [{ "blocklist": "video", "kind": "domain", "entry": "netflix.com", "effective_at": "2026-01-06T00:00:00Z" }],
+    "blocklist_opt_outs": [{ "blocklist": "news", "effective_at": "2026-01-06T00:00:00Z" }]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T23:30:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["bbc.com", "example.org", "netflix.com", "youtube.com"] } }
+    },
+    {
+      "server_time": "2026-01-06T00:30:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["bbc.com", "example.org", "youtube.com"], "blocked_domains_exclude": ["netflix.com"] } }
+    },
+    {
+      "server_time": "2026-01-06T09:30:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["example.org", "youtube.com"], "blocked_domains_exclude": ["bbc.com", "netflix.com", "github.com"] } }
+    },
+    {
+      "server_time": "2026-01-06T09:31:00Z",
+      "command": { "type": "opt_in_to_blocklist", "blocklist": "news" },
+      "expect": { "outcome": "accepted", "enforcement": { "blocked_domains_include": ["bbc.com"] } }
+    }
+  ]
+}

@@ -7,8 +7,10 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
-use cloister_core::{enforcement, Block, Command, Enforcement, State};
+use chrono::{DateTime, NaiveDate, Utc};
+use cloister_core::{
+    enforcement, planned_deep_sessions, Block, Command, DayPlan, Enforcement, State,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -236,7 +238,8 @@ impl Device {
         ))?;
         let blocks: Vec<Block> =
             serde_json::from_value(rows).map_err(|e| Error::Protocol(e.to_string()))?;
-        // The account's Blocklist edits and time zone, in the engine's JSON form.
+        // The account's state in the engine's form: Blocklist edits, time zone, Day Plans
+        // and Schedules (absent keys mean none).
         let state = self.online(backend.rest_post(&session, "rpc/state", json!({}), None))?;
         let state: State =
             serde_json::from_value(state).map_err(|e| Error::Protocol(e.to_string()))?;
@@ -251,7 +254,8 @@ impl Device {
                 &state.blocklist_edits(),
                 server_now,
             )?;
-            blocks_changed || edits_changed
+            let plans_changed = mirror.replace_day_plans(&state.day_plans, &state.schedules)?;
+            blocks_changed || edits_changed || plans_changed
         };
         if changed {
             self.emit(SyncEvent::StateChanged);
@@ -262,6 +266,23 @@ impl Device {
     /// The state this Device enforces (from the mirror; works offline).
     pub fn state(&self) -> Result<State> {
         lock(&self.inner.mirror).state()
+    }
+
+    /// The Day Plan for `date` (from the mirror; works offline): the saved one, or else the
+    /// draft its Schedule fills in.
+    pub fn day_plan(&self, date: NaiveDate) -> Result<Option<DayPlan>> {
+        Ok(cloister_core::day_plan(&self.state()?, date))
+    }
+
+    /// Deep Sessions that deep Slots have become by now (by the best estimate of server
+    /// time), as Blocks. Handed to the enforcement service, which only ever tightens: a
+    /// started Deep Session can't change, so it is safe to hand over once it has begun.
+    pub fn started_planned_sessions(&self) -> Result<Vec<Block>> {
+        let now = self.server_time();
+        Ok(planned_deep_sessions(&self.state()?, now)
+            .into_iter()
+            .filter(|b| b.starts_at <= now)
+            .collect())
     }
 
     /// The Enforcement for now, by the best estimate of server time.

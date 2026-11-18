@@ -1,0 +1,236 @@
+{
+  "name": "schedule-ratchet",
+  "description": "Once a day running on its Schedule has begun, the Schedule's plan is that day's floor: started Deep Sessions stay and Planned Deep Minutes can't go down.",
+  "initial_state": {
+    "blocks": [],
+    "schedules": [
+      {
+        "id": "weekdays",
+        "time_zone": "UTC",
+        "weekdays": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": [
+          {
+            "starts": "08:00",
+            "ends": "11:00",
+            "label": "Deep work",
+            "deep": true
+          },
+          {
+            "starts": "11:00",
+            "ends": "12:00",
+            "label": "Email and chat",
+            "deep": false
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T07:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-05",
+        "starts_at": "2026-01-05T08:00:00Z",
+        "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [
+          {
+            "id": "m1",
+            "starts_at": "2026-01-05T13:00:00Z",
+            "ends_at": "2026-01-05T14:00:00Z",
+            "label": "Write",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "day_plans": [
+            {
+              "date": "2026-01-05",
+              "starts_at": "2026-01-05T08:00:00Z",
+              "ends_at": "2026-01-05T17:00:00Z",
+              "planned_deep_minutes": 60,
+              "slots": [
+                {
+                  "id": "m1",
+                  "starts_at": "2026-01-05T13:00:00Z",
+                  "ends_at": "2026-01-05T14:00:00Z",
+                  "label": "Write",
+                  "deep": true
+                }
+              ]
+            }
+          ],
+          "schedules": [
+            {
+              "id": "weekdays",
+              "time_zone": "UTC",
+              "weekdays": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "starts": "08:00",
+              "ends": "17:00",
+              "slots": [
+                {
+                  "starts": "08:00",
+                  "ends": "11:00",
+                  "label": "Deep work",
+                  "deep": true
+                },
+                {
+                  "starts": "11:00",
+                  "ends": "12:00",
+                  "label": "Email and chat",
+                  "deep": false
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-06T07:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-06",
+        "starts_at": "2026-01-06T08:00:00Z",
+        "ends_at": "2026-01-06T17:00:00Z",
+        "slots": [
+          {
+            "id": "t1",
+            "starts_at": "2026-01-06T08:00:00Z",
+            "ends_at": "2026-01-06T09:00:00Z",
+            "label": "Write",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted"
+      }
+    },
+    {
+      "server_time": "2026-01-07T09:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-07",
+        "starts_at": "2026-01-07T08:00:00Z",
+        "ends_at": "2026-01-07T17:00:00Z",
+        "slots": [
+          {
+            "id": "x1",
+            "starts_at": "2026-01-07T13:00:00Z",
+            "ends_at": "2026-01-07T14:00:00Z",
+            "label": "Write",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "deep_session_has_started"
+      }
+    },
+    {
+      "server_time": "2026-01-07T09:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-07",
+        "starts_at": "2026-01-07T08:00:00Z",
+        "ends_at": "2026-01-07T17:00:00Z",
+        "slots": [
+          {
+            "id": "weekdays-2026-01-07-1",
+            "starts_at": "2026-01-07T08:00:00Z",
+            "ends_at": "2026-01-07T11:00:00Z",
+            "label": "Deep work",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted"
+      }
+    },
+    {
+      "server_time": "2026-01-07T09:30:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-07",
+        "starts_at": "2026-01-07T08:00:00Z",
+        "ends_at": "2026-01-07T17:00:00Z",
+        "slots": [
+          {
+            "id": "weekdays-2026-01-07-1",
+            "starts_at": "2026-01-07T08:00:00Z",
+            "ends_at": "2026-01-07T11:00:00Z",
+            "label": "Deep work",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted"
+      }
+    },
+    {
+      "server_time": "2026-01-08T08:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-08",
+        "starts_at": "2026-01-08T08:00:00Z",
+        "ends_at": "2026-01-08T17:00:00Z",
+        "slots": [
+          {
+            "id": "weekdays-2026-01-08-1",
+            "starts_at": "2026-01-08T08:00:00Z",
+            "ends_at": "2026-01-08T10:00:00Z",
+            "label": "Deep work",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "rejected",
+        "reason": "deep_session_has_started"
+      }
+    },
+    {
+      "server_time": "2026-01-08T07:59:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-08",
+        "starts_at": "2026-01-08T08:00:00Z",
+        "ends_at": "2026-01-08T17:00:00Z",
+        "slots": [
+          {
+            "id": "q1",
+            "starts_at": "2026-01-08T09:00:00Z",
+            "ends_at": "2026-01-08T10:00:00Z",
+            "label": "Deep work",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted"
+      }
+    }
+  ]
+}

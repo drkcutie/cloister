@@ -7,6 +7,7 @@
 
 mod begin;
 mod blocklists;
+mod day_plan;
 mod devices;
 mod rating;
 mod session;
@@ -24,10 +25,11 @@ use crate::state::{Cloister, CloisterHandle};
 use crate::theme::{PaletteExt, SANS};
 use crate::ui;
 
-/// The screens in the sidebar.
+/// The screen picked in the sidebar (a running Deep Session takes over Today).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     Today,
+    DayPlan,
     Blocklists,
     Devices,
 }
@@ -42,6 +44,7 @@ pub struct MainView {
     extra: Entity<InputState>,
     /// The Quit-Social Block's "can't be undone" confirmation is showing.
     confirm_quit_social: bool,
+    day_plan: Option<Entity<day_plan::DayPlanView>>,
     form: BeginForm,
     intent: Entity<InputState>,
     custom: Entity<InputState>,
@@ -94,12 +97,14 @@ impl MainView {
             screen: match std::env::var("CLOISTER_SCREEN").as_deref() {
                 Ok("blocklists") => Screen::Blocklists,
                 Ok("devices") => Screen::Devices,
+                Ok("day-plan") => Screen::DayPlan,
                 _ => Screen::Today,
             },
             entry,
             entry_list: "social".into(),
             extra,
             confirm_quit_social: false,
+            day_plan: None,
             form: BeginForm::default(),
             intent,
             custom,
@@ -118,8 +123,11 @@ impl MainView {
         cx.notify();
     }
 
-    pub(crate) fn show(&mut self, screen: Screen, cx: &mut Context<Self>) {
+    pub(crate) fn show(&mut self, screen: Screen, window: &mut Window, cx: &mut Context<Self>) {
         self.screen = screen;
+        if screen == Screen::DayPlan && self.day_plan.is_none() {
+            self.day_plan = Some(cx.new(|cx| day_plan::DayPlanView::new(window, cx)));
+        }
         self.confirm_quit_social = false;
         self.cloister.update(cx, |c, cx| c.dismiss_notice(cx));
     }
@@ -220,6 +228,21 @@ impl Render for MainView {
                     sidebar::with_sidebar(self, &view, content, cx),
                 ))
             }
+            (Screen::DayPlan, _) => {
+                let plan = self
+                    .day_plan
+                    .get_or_insert_with(|| cx.new(|cx| day_plan::DayPlanView::new(window, cx)))
+                    .clone();
+                let side = sidebar::render(self, &view, cx);
+                root.child(ui::fade_in(
+                    "day-plan",
+                    div()
+                        .size_full()
+                        .flex()
+                        .child(side)
+                        .child(div().flex_1().min_w_0().h_full().child(plan)),
+                ))
+            }
         }
     }
 }
@@ -242,7 +265,14 @@ pub fn open_main_window(cx: &mut App) {
         ..Default::default()
     };
     if let Err(e) = gpui_kit::open_window(options, cx, |window, cx| {
-        cx.new(|cx| MainView::new(window, cx))
+        cx.new(|cx| {
+            let mut view = MainView::new(window, cx);
+            // Development aid: `CLOISTER_OPEN=day-plan` opens on the Day Plan screen.
+            if std::env::var("CLOISTER_OPEN").as_deref() == Ok("day-plan") {
+                view.show(Screen::DayPlan, window, cx);
+            }
+            view
+        })
     }) {
         eprintln!("cloister-app: opening the window failed: {e}");
     }

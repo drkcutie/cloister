@@ -53,7 +53,7 @@ pub fn render(this: &mut MainView, view: &View, cx: &mut Context<MainView>) -> D
                     d.text_color(p.ink_2).hover(|s| s.bg(p.surface))
                 }
             })
-            .on_click(cx.listener(move |this, _, _, cx| this.show(screen, cx)))
+            .on_click(cx.listener(move |this, _, window, cx| this.show(screen, window, cx)))
             .child(label)
     };
     div()
@@ -73,6 +73,7 @@ pub fn render(this: &mut MainView, view: &View, cx: &mut Context<MainView>) -> D
                 .flex_col()
                 .gap(px(2.))
                 .child(item(Screen::Today, "Today", cx))
+                .child(item(Screen::DayPlan, "Day Plan", cx))
                 .child(item(Screen::Blocklists, "Blocklists", cx))
                 .child(item(Screen::Devices, "Devices", cx)),
         )

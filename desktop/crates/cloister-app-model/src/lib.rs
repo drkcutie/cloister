@@ -7,6 +7,7 @@
 
 mod begin;
 mod blocklists;
+mod day_plan;
 mod devices;
 mod enforcer;
 pub mod format;
@@ -19,6 +20,7 @@ pub use blocklists::{
     site_input, takes_effect, title, Blocklists, BlocklistsView, EntryView, ListView,
     PendingChange, Rules, ServiceRules,
 };
+pub use day_plan::{DayPlanEditor, EditorSlot, PlanBackend, DEFAULT_WORKDAY, STEP_MINUTES};
 pub use devices::{devices_view, open_account, AccountRules, DeviceRow, DevicesView};
 pub use enforcer::{Enforcer, SocketEnforcer};
 pub use format::Zone;

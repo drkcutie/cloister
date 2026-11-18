@@ -148,11 +148,45 @@ fn sign_in_with_state(tx: &mut Transaction, scenario: &str, initial_state: &Valu
         )
         .unwrap();
     }
+    for plan in &state.day_plans {
+        tx.execute(
+            "insert into public.day_plans
+               (user_id, date, starts_at, ends_at, planned_deep_minutes, slots)
+             values ($1::text::uuid, $2::text::date, $3::text::timestamptz, $4::text::timestamptz,
+                     $5::int, $6)",
+            &[
+                &user_id,
+                &plan.date.to_string(),
+                &plan.starts_at.to_rfc3339(),
+                &plan.ends_at.to_rfc3339(),
+                &(plan.planned_deep_minutes as i32),
+                &serde_json::to_value(&plan.slots).unwrap(),
+            ],
+        )
+        .unwrap();
+    }
     for o in &state.blocklist_opt_outs {
         tx.execute(
             "insert into public.blocklist_opt_outs (user_id, blocklist, effective_at)
              values ($1::text::uuid, $2, $3::text::timestamptz)",
             &[&user_id, &o.blocklist, &o.effective_at.to_rfc3339()],
+        )
+        .unwrap();
+    }
+    for schedule in &state.schedules {
+        let weekdays: Vec<i16> = schedule.weekdays.iter().map(|&d| d.into()).collect();
+        tx.execute(
+            "insert into public.schedules (user_id, id, time_zone, weekdays, starts, ends, slots)
+             values ($1::text::uuid, $2, $3, $4, $5, $6, $7)",
+            &[
+                &user_id,
+                &schedule.id,
+                &schedule.time_zone,
+                &weekdays,
+                &schedule.starts,
+                &schedule.ends,
+                &serde_json::to_value(&schedule.slots).unwrap(),
+            ],
         )
         .unwrap();
     }

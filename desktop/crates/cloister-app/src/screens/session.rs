@@ -42,6 +42,7 @@ pub fn render(
                         .items_center()
                         .gap(space::S6)
                         .child(ui::wordmark(&p, 24.))
+                        .child(nav_link(&p, "Day Plan", super::Screen::DayPlan, cx))
                         .child(nav_link(&p, "Blocklists", super::Screen::Blocklists, cx))
                         .child(nav_link(&p, "Devices", super::Screen::Devices, cx)),
                 )
@@ -173,6 +174,6 @@ fn nav_link(
         .text_color(p.ink_2)
         .underline()
         .cursor_pointer()
-        .on_click(cx.listener(move |this, _, _, cx| this.show(screen, cx)))
+        .on_click(cx.listener(move |this, _, window, cx| this.show(screen, window, cx)))
         .child(label)
 }

@@ -1,0 +1,262 @@
+{
+  "name": "schedule-fills-day-plan",
+  "description": "A Schedule is a recurring template: a day with no saved Day Plan runs on it, and a saved Day Plan replaces it.",
+  "initial_state": {
+    "blocks": []
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "put_schedule",
+        "schedule_id": "weekdays",
+        "time_zone": "UTC",
+        "weekdays": [
+          5,
+          1,
+          2,
+          3,
+          4
+        ],
+        "starts": "08:00",
+        "ends": "17:00",
+        "slots": [
+          {
+            "starts": "11:00",
+            "ends": "12:00",
+            "label": "Email and chat",
+            "deep": false
+          },
+          {
+            "starts": "08:00",
+            "ends": "11:00",
+            "label": "  Deep work ",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "schedules": [
+            {
+              "id": "weekdays",
+              "time_zone": "UTC",
+              "weekdays": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "starts": "08:00",
+              "ends": "17:00",
+              "slots": [
+                {
+                  "starts": "08:00",
+                  "ends": "11:00",
+                  "label": "Deep work",
+                  "deep": true
+                },
+                {
+                  "starts": "11:00",
+                  "ends": "12:00",
+                  "label": "Email and chat",
+                  "deep": false
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T07:59:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains": [],
+          "blocked_apps": []
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T08:00:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains_include": [
+            "youtube.com",
+            "facebook.com"
+          ],
+          "blocked_domains_exclude": [
+            "github.com"
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T10:59:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains_include": [
+            "youtube.com",
+            "facebook.com"
+          ],
+          "blocked_domains_exclude": [
+            "github.com"
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T11:30:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains": [],
+          "blocked_apps": []
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-10T09:00:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains": [],
+          "blocked_apps": []
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-10T09:00:00Z",
+      "command": {
+        "type": "start_block",
+        "block_id": "w1",
+        "minutes": 30
+      },
+      "expect": {
+        "outcome": "accepted"
+      }
+    },
+    {
+      "server_time": "2026-01-05T20:00:00Z",
+      "command": {
+        "type": "write_day_plan",
+        "date": "2026-01-06",
+        "starts_at": "2026-01-06T08:00:00Z",
+        "ends_at": "2026-01-06T17:00:00Z",
+        "slots": [
+          {
+            "id": "t1",
+            "starts_at": "2026-01-06T13:00:00Z",
+            "ends_at": "2026-01-06T14:00:00Z",
+            "label": "Write",
+            "deep": true
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "w1",
+              "starts_at": "2026-01-10T09:00:00Z",
+              "ends_at": "2026-01-10T09:30:00Z",
+              "blocklists": [
+                "forums",
+                "news",
+                "shopping",
+                "social",
+                "video"
+              ],
+              "deep": true
+            }
+          ],
+          "day_plans": [
+            {
+              "date": "2026-01-06",
+              "starts_at": "2026-01-06T08:00:00Z",
+              "ends_at": "2026-01-06T17:00:00Z",
+              "planned_deep_minutes": 60,
+              "slots": [
+                {
+                  "id": "t1",
+                  "starts_at": "2026-01-06T13:00:00Z",
+                  "ends_at": "2026-01-06T14:00:00Z",
+                  "label": "Write",
+                  "deep": true
+                }
+              ]
+            }
+          ],
+          "schedules": [
+            {
+              "id": "weekdays",
+              "time_zone": "UTC",
+              "weekdays": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "starts": "08:00",
+              "ends": "17:00",
+              "slots": [
+                {
+                  "starts": "08:00",
+                  "ends": "11:00",
+                  "label": "Deep work",
+                  "deep": true
+                },
+                {
+                  "starts": "11:00",
+                  "ends": "12:00",
+                  "label": "Email and chat",
+                  "deep": false
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-06T09:00:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains": [],
+          "blocked_apps": []
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-06T13:00:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains_include": [
+            "youtube.com",
+            "facebook.com"
+          ],
+          "blocked_domains_exclude": [
+            "github.com"
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-07T09:00:00Z",
+      "expect": {
+        "enforcement": {
+          "blocked_domains_include": [
+            "youtube.com",
+            "facebook.com"
+          ],
+          "blocked_domains_exclude": [
+            "github.com"
+          ]
+        }
+      }
+    }
+  ]
+}

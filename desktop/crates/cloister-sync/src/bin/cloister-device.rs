@@ -200,12 +200,19 @@ fn sync(device: &Device, enforcer: Option<&std::path::Path>) -> Result<(), Strin
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
         }
         let state = device.state().map_err(|e| e.to_string())?;
+        let mut blocks = state.blocks.clone();
+        // Deep Slots that have started are Deep Sessions the service must enforce too.
+        blocks.extend(
+            device
+                .started_planned_sessions()
+                .map_err(|e| e.to_string())?,
+        );
         let mut enforcing = true;
         if let Some(socket) = enforcer {
             match ipc::send(
                 socket,
                 &Request::Sync {
-                    blocks: state.blocks.clone(),
+                    blocks,
                     blocklists: Some(state.blocklist_edits()),
                 },
             ) {
