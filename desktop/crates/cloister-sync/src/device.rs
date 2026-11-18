@@ -436,21 +436,24 @@ impl Device {
         Ok(())
     }
 
-    /// Upsert this Device's row: name, platform and whether it is enforcing.
+    /// Send this Device's heartbeat: name, platform and whether it is enforcing. The backend
+    /// upserts only this account's own Device and stamps `last_seen_at` with server time
+    /// (clients can't write `devices` directly).
     fn register(&self) -> Result<()> {
         let session = self.session()?;
         let body = json!({
-            "id": self.inner.device_id,
-            "name": self.inner.info.name,
-            "platform": self.inner.info.platform,
-            "enforcing": self.inner.enforcing.load(Ordering::SeqCst),
+            "device": {
+                "id": self.inner.device_id,
+                "name": self.inner.info.name,
+                "platform": self.inner.info.platform,
+                "enforcing": self.inner.enforcing.load(Ordering::SeqCst),
+            }
         });
-        self.online(self.inner.backend.rest_post(
-            &session,
-            "devices?on_conflict=id",
-            body,
-            Some("resolution=merge-duplicates,return=minimal"),
-        ))
+        self.online(
+            self.inner
+                .backend
+                .rest_post(&session, "rpc/device_heartbeat", body, None),
+        )
         .map(|_| ())
     }
 

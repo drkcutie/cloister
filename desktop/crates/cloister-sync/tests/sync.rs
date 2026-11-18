@@ -6,7 +6,7 @@ mod common;
 
 use std::path::Path;
 
-use chrono::Datelike;
+use chrono::{Datelike, Utc};
 use std::time::{Duration, Instant};
 
 use cloister_core::{Command, EntryKind, RitualScreen, SlotInput};
@@ -186,21 +186,48 @@ fn the_devices_list_shows_each_device_and_its_status() {
     );
 }
 
-/// A phone registering itself the way the Android app does (`android/sync` Device.register).
-fn register_phone(session: &cloister_sync::Session, id: &str, hardcore: bool) -> u16 {
+/// A REST call as the signed-in user; returns the HTTP status and the body.
+fn rest(
+    session: &cloister_sync::Session,
+    method: &str,
+    path: &str,
+    body: Option<serde_json::Value>,
+) -> (u16, String) {
     let backend = common::backend();
-    let answer = ureq::post(&format!("{}/rest/v1/devices?on_conflict=id", backend.url()))
+    let req = ureq::request(method, &format!("{}/rest/v1/{path}", backend.url()))
         .set("apikey", backend.anon_key())
         .set("Authorization", &format!("Bearer {}", session.access_token))
-        .set("Prefer", "resolution=merge-duplicates,return=minimal")
-        .send_json(serde_json::json!({
-            "id": id, "name": "Pixel", "platform": "android", "enforcing": true, "hardcore": hardcore,
-        }));
+        .set("Prefer", "return=minimal");
+    let answer = match body {
+        Some(b) => req.send_json(b),
+        None => req.call(),
+    };
     match answer {
-        Ok(r) => r.status(),
-        Err(ureq::Error::Status(code, _)) => code,
+        Ok(r) => (r.status(), r.into_string().unwrap_or_default()),
+        Err(ureq::Error::Status(code, r)) => (code, r.into_string().unwrap_or_default()),
         Err(e) => panic!("{e}"),
     }
+}
+
+/// A Device's heartbeat, the way every client sends it (`rpc/device_heartbeat`).
+fn heartbeat(session: &cloister_sync::Session, device: serde_json::Value) -> u16 {
+    rest(
+        session,
+        "POST",
+        "rpc/device_heartbeat",
+        Some(serde_json::json!({ "device": device })),
+    )
+    .0
+}
+
+/// A phone registering itself the way the Android app does (`android/sync` Device.register).
+fn register_phone(session: &cloister_sync::Session, id: &str, hardcore: bool) -> u16 {
+    heartbeat(
+        session,
+        serde_json::json!({
+            "id": id, "name": "Pixel", "platform": "android", "enforcing": true, "hardcore": hardcore,
+        }),
+    )
 }
 
 #[test]
@@ -211,7 +238,7 @@ fn the_devices_list_says_which_phone_runs_hardcore_mode() {
     std::thread::sleep(Duration::from_millis(1100));
     let phone = common::sign_in(&common::backend(), &account_email(&b));
     let id = "6f1c1a52-0a7e-4f5e-9d47-6b8f0f3c2a11";
-    assert_eq!(register_phone(&phone, id, true), 201);
+    assert_eq!(register_phone(&phone, id, true), 204);
     let list = b.devices().unwrap();
     let pixel = list
         .iter()
@@ -231,18 +258,86 @@ fn only_a_phone_can_claim_hardcore_mode() {
     let (a, _b) = two_devices(dir.path(), "hardcore-desktop");
     std::thread::sleep(Duration::from_millis(1100));
     let session = common::sign_in(&common::backend(), &account_email(&a));
-    let backend = common::backend();
-    let answer = ureq::post(&format!("{}/rest/v1/devices?on_conflict=id", backend.url()))
-        .set("apikey", backend.anon_key())
-        .set("Authorization", &format!("Bearer {}", session.access_token))
-        .set("Prefer", "return=minimal")
-        .send_json(serde_json::json!({
-            "id": "0d4b3a0e-6e0b-4b8a-8f86-3c1b2d6f9e01", "name": "Mac", "platform": "macos", "hardcore": true,
-        }));
-    assert!(
-        matches!(answer, Err(ureq::Error::Status(400, _))),
-        "{answer:?}"
+    let status = heartbeat(
+        &session,
+        serde_json::json!({
+            "id": "0d4b3a0e-6e0b-4b8a-8f86-3c1b2d6f9e01", "name": "Mac", "platform": "macos",
+            "enforcing": true, "hardcore": true,
+        }),
     );
+    assert_eq!(status, 400);
+}
+
+#[test]
+#[ignore = "needs a local Supabase; run backend/scripts/test.sh"]
+fn devices_are_written_only_by_their_own_heartbeat() {
+    let backend = common::backend();
+    let mine = common::sign_in(&backend, &common::unique_email("heartbeat-a"));
+    std::thread::sleep(Duration::from_millis(1100));
+    let theirs = common::sign_in(&backend, &common::unique_email("heartbeat-b"));
+    let id = cloister_sync::new_block_id();
+    let laptop = |enforcing: bool| serde_json::json!({ "id": id, "name": "Laptop", "platform": "macos", "enforcing": enforcing });
+    assert_eq!(heartbeat(&mine, laptop(false)), 204);
+
+    // No direct writes: a tampered client can't fake a row, its status or when it was seen.
+    let fake = serde_json::json!({
+        "id": cloister_sync::new_block_id(), "name": "Fake", "platform": "macos", "enforcing": true,
+        "last_seen_at": "2100-01-01T00:00:00Z",
+    });
+    let (code, _) = rest(&mine, "POST", "devices", Some(fake));
+    assert!(code == 401 || code == 403, "insert: {code}");
+    let filter = format!("devices?id=eq.{id}");
+    let (code, _) = rest(
+        &mine,
+        "PATCH",
+        &filter,
+        Some(serde_json::json!({ "enforcing": true, "last_seen_at": "2100-01-01T00:00:00Z" })),
+    );
+    assert!(code == 401 || code == 403, "update: {code}");
+    let (code, _) = rest(&mine, "DELETE", &filter, None);
+    assert!(code == 401 || code == 403, "delete: {code}");
+
+    // The heartbeat can't carry last_seen_at, created_at or a user id.
+    let stamped = serde_json::json!({
+        "id": id, "name": "Laptop", "platform": "macos", "enforcing": true,
+        "last_seen_at": "2100-01-01T00:00:00Z",
+    });
+    assert_eq!(heartbeat(&mine, stamped), 400);
+
+    // Another account can't take over (or even touch) this Device's id.
+    assert_eq!(heartbeat(&theirs, laptop(true)), 400);
+
+    // The owner's heartbeat updates the row; the server stamps last_seen_at; platform stays.
+    let before = Utc::now();
+    let renamed = serde_json::json!({ "id": id, "name": "Work laptop", "platform": "linux", "enforcing": true });
+    assert_eq!(heartbeat(&mine, renamed), 204);
+    let (code, body) = rest(
+        &mine,
+        "GET",
+        &format!("devices?select=name,platform,enforcing,last_seen_at&id=eq.{id}"),
+        None,
+    );
+    assert_eq!(code, 200);
+    let rows: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(rows.as_array().map(Vec::len), Some(1), "{rows}");
+    let row = &rows[0];
+    assert_eq!(row["name"], "Work laptop");
+    assert_eq!(row["platform"], "macos");
+    assert_eq!(row["enforcing"], true);
+    let seen: chrono::DateTime<Utc> = serde_json::from_value(row["last_seen_at"].clone()).unwrap();
+    assert!(
+        seen > before - chrono::Duration::seconds(30)
+            && seen < Utc::now() + chrono::Duration::seconds(30),
+        "{seen}"
+    );
+    // The other account sees nothing of it.
+    let (_, body) = rest(
+        &theirs,
+        "GET",
+        &format!("devices?select=id&id=eq.{id}"),
+        None,
+    );
+    assert_eq!(body.trim(), "[]");
 }
 
 /// The email `device`'s account signed in with.

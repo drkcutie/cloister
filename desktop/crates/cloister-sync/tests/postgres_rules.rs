@@ -66,7 +66,8 @@ fn each_user_sees_only_their_own_blocks_and_devices() {
     );
     assert_eq!(started["outcome"], "accepted");
     tx.batch_execute(
-        "insert into public.devices (id, name, platform) values (gen_random_uuid(), 'Laptop', 'macos')",
+        "select public.device_heartbeat(jsonb_build_object('id', gen_random_uuid(), \
+         'name', 'Laptop', 'platform', 'macos', 'enforcing', true))",
     )
     .unwrap();
 
@@ -110,6 +111,81 @@ fn a_tampered_client_cant_write_blocks_directly() {
         let (code, _) = try_sql(&mut tx, sql).unwrap_or_else(|| panic!("{sql} should fail"));
         assert_eq!(code, "42501", "{sql}: permission denied");
     }
+    tx.rollback().unwrap();
+}
+
+#[test]
+#[ignore = "needs a local Supabase; run backend/scripts/test.sh"]
+fn devices_change_only_through_their_own_heartbeat() {
+    let mut client = connect();
+    let mut tx = client.transaction().unwrap();
+    let a = new_user(&mut tx, "heartbeat-a@rules.test");
+    let b = new_user(&mut tx, "heartbeat-b@rules.test");
+    let id = "5b0b8c1e-3a43-4b6e-9a55-0d2b0a7c1f10";
+    let beat = |name: &str, platform: &str, enforcing: bool| {
+        format!(
+            "select public.device_heartbeat('{}')",
+            json!({"id": id, "name": name, "platform": platform, "enforcing": enforcing})
+        )
+    };
+    act_as(&mut tx, &a);
+    // Server time is pinned (the DB owner may), so last_seen_at shows it was stamped.
+    tx.batch_execute(
+        "reset role; select set_config('cloister.server_time', '2026-01-05T09:00:00Z', true)",
+    )
+    .unwrap();
+    act_as(&mut tx, &a);
+    assert_eq!(try_sql(&mut tx, &beat("Laptop", "macos", false)), None);
+    for sql in [
+        "update public.devices set enforcing = true, last_seen_at = '2100-01-01'",
+        "delete from public.devices",
+        "insert into public.devices (id, name, platform, enforcing) values (gen_random_uuid(), 'Fake', 'macos', true)",
+    ] {
+        let (code, _) = try_sql(&mut tx, sql).unwrap_or_else(|| panic!("{sql} should fail"));
+        assert_eq!(code, "42501", "{sql}: permission denied");
+    }
+    let stamped = format!(
+        "select public.device_heartbeat('{}')",
+        json!({"id": id, "name": "Laptop", "platform": "macos", "enforcing": true,
+               "last_seen_at": "2100-01-01T00:00:00Z"})
+    );
+    assert_eq!(
+        try_sql(&mut tx, &stamped),
+        Some(("CL001".into(), "invalid_command".into()))
+    );
+
+    act_as(&mut tx, &b);
+    assert_eq!(
+        try_sql(&mut tx, &beat("Mine now", "macos", true)),
+        Some(("CL001".into(), "device_not_yours".into()))
+    );
+
+    act_as(&mut tx, &a);
+    tx.batch_execute(
+        "reset role; select set_config('cloister.server_time', '2026-01-05T09:05:00Z', true)",
+    )
+    .unwrap();
+    act_as(&mut tx, &a);
+    assert_eq!(try_sql(&mut tx, &beat("Work laptop", "linux", true)), None);
+    let row = tx
+        .query_one(
+            "select name, platform, enforcing, cloister.rfc3339(last_seen_at), cloister.rfc3339(created_at) \
+             from public.devices",
+            &[],
+        )
+        .unwrap();
+    let got: (String, String, bool, String, String) =
+        (row.get(0), row.get(1), row.get(2), row.get(3), row.get(4));
+    assert_eq!(
+        got,
+        (
+            "Work laptop".into(),
+            "macos".into(),
+            true,
+            "2026-01-05T09:05:00Z".into(),
+            "2026-01-05T09:00:00Z".into()
+        )
+    );
     tx.rollback().unwrap();
 }
 

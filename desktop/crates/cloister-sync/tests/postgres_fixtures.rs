@@ -210,9 +210,9 @@ fn sign_in_with_state(tx: &mut Transaction, scenario: &str, initial_state: &Valu
             "insert into public.settings
                (user_id, workdays, workday_start, shutdown_time, pending_workdays,
                 pending_workday_start, pending_shutdown_time, pending_effective_at,
-                settings_since)
+                settings_since, past_settings)
              values ($1::text::uuid, $2, $3, $4, $5, $6, $7, $8::text::timestamptz,
-                     $9::text::timestamptz)",
+                     $9::text::timestamptz, $10)",
             &[
                 &user_id,
                 &days(&settings.workdays),
@@ -223,6 +223,7 @@ fn sign_in_with_state(tx: &mut Transaction, scenario: &str, initial_state: &Valu
                 &pending.map(|p| p.shutdown_time.clone()),
                 &pending.map(|p| p.effective_at.to_rfc3339()),
                 &state.settings_since.map(|t| t.to_rfc3339()),
+                &serde_json::to_value(&state.past_settings).unwrap(),
             ],
         )
         .unwrap();
