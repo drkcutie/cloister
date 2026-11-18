@@ -1,17 +1,22 @@
-//! The main window. One view, [`MainView`], picks the screen from the model's [`View`]:
-//! Begin (with the Depth Rating prompt when one is owed) or the running Deep Session.
+//! The main window. One view, [`MainView`], picks the screen: Today (Begin, with the Depth
+//! Rating prompt when one is owed, or the running Deep Session), Blocklists or Devices,
+//! chosen in the sidebar.
 //!
 //! To add a screen: add a module here with a `render_*` function taking `&mut MainView`
 //! (or a separate `Render` entity if it owns inputs), and choose it in `MainView::render`.
 
 mod begin;
+mod blocklists;
+mod devices;
 mod rating;
 mod session;
+mod sidebar;
 
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use cloister_app_model::{BeginForm, Hold, Length};
+use cloister_core::EntryKind;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::*;
 
@@ -19,8 +24,24 @@ use crate::state::{Cloister, CloisterHandle};
 use crate::theme::{PaletteExt, SANS};
 use crate::ui;
 
+/// The screens in the sidebar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Screen {
+    Today,
+    Blocklists,
+    Devices,
+}
+
 pub struct MainView {
     cloister: Entity<Cloister>,
+    screen: Screen,
+    /// The site or app being added on the Blocklists screen, and to which Blocklist.
+    entry: Entity<InputState>,
+    entry_list: String,
+    /// A site or app for this Block only, on the Begin screen.
+    extra: Entity<InputState>,
+    /// The Quit-Social Block's "can't be undone" confirmation is showing.
+    confirm_quit_social: bool,
     form: BeginForm,
     intent: Entity<InputState>,
     custom: Entity<InputState>,
@@ -39,6 +60,8 @@ impl MainView {
             InputState::new(window, cx).placeholder("Draft the methods section, start to finish.")
         });
         let custom = cx.new(|cx| InputState::new(window, cx).placeholder("75"));
+        let entry = cx.new(|cx| InputState::new(window, cx).placeholder("example.com or Discord"));
+        let extra = cx.new(|cx| InputState::new(window, cx).placeholder("example.com or Steam"));
         let subscriptions = vec![
             cx.observe(&cloister, |_, _, cx| cx.notify()),
             cx.subscribe_in(&intent, window, |this, state, event, _, cx| {
@@ -67,6 +90,16 @@ impl MainView {
         intent.update(cx, |s, cx| s.focus(window, cx));
         MainView {
             cloister,
+            // Opening on another screen helps screenshots and manual checks.
+            screen: match std::env::var("CLOISTER_SCREEN").as_deref() {
+                Ok("blocklists") => Screen::Blocklists,
+                Ok("devices") => Screen::Devices,
+                _ => Screen::Today,
+            },
+            entry,
+            entry_list: "social".into(),
+            extra,
+            confirm_quit_social: false,
             form: BeginForm::default(),
             intent,
             custom,
@@ -82,6 +115,36 @@ impl MainView {
         self.form.length = Length::Preset(minutes);
         self.custom_text.clear();
         self.custom.update(cx, |s, cx| s.set_value("", window, cx));
+        cx.notify();
+    }
+
+    pub(crate) fn show(&mut self, screen: Screen, cx: &mut Context<Self>) {
+        self.screen = screen;
+        self.confirm_quit_social = false;
+        self.cloister.update(cx, |c, cx| c.dismiss_notice(cx));
+    }
+
+    /// Add what is typed in the Blocklists screen's field to the chosen Blocklist.
+    fn add_entry(&mut self, kind: EntryKind, window: &mut Window, cx: &mut Context<Self>) {
+        let input = self.entry.read(cx).value().to_string();
+        if input.trim().is_empty() {
+            return;
+        }
+        let list = self.entry_list.clone();
+        let added = self
+            .cloister
+            .update(cx, |c, cx| c.add_entry(&list, kind, &input, cx));
+        if added {
+            self.entry.update(cx, |s, cx| s.set_value("", window, cx));
+        }
+    }
+
+    /// Add what is typed in the Begin screen's extras field to this Block only.
+    fn add_extra(&mut self, kind: EntryKind, window: &mut Window, cx: &mut Context<Self>) {
+        let input = self.extra.read(cx).value().to_string();
+        if self.form.add_extra(kind, &input) {
+            self.extra.update(cx, |s, cx| s.set_value("", window, cx));
+        }
         cx.notify();
     }
 
@@ -120,6 +183,8 @@ impl MainView {
         let started = self.cloister.update(cx, |c, cx| c.begin(&form, cx));
         if started {
             self.form.long_confirmed = false;
+            self.form.extra_domains.clear();
+            self.form.extra_apps.clear();
         }
     }
 }
@@ -133,12 +198,28 @@ impl Render for MainView {
             .bg(p.ground)
             .text_color(p.ink)
             .font_family(SANS);
-        match view.active.clone() {
-            Some(active) => root.child(ui::fade_in(
+        match (self.screen, view.active.clone()) {
+            (Screen::Today, Some(active)) => root.child(ui::fade_in(
                 SharedString::from(format!("session-{}", active.block_id)),
                 session::render(self, &active, &view, window, cx),
             )),
-            None => root.child(ui::fade_in("begin", begin::render(self, &view, window, cx))),
+            (Screen::Today, None) => {
+                root.child(ui::fade_in("begin", begin::render(self, &view, window, cx)))
+            }
+            (Screen::Blocklists, _) => {
+                let content = blocklists::render(self, window, cx);
+                root.child(ui::fade_in(
+                    "blocklists",
+                    sidebar::with_sidebar(self, &view, content, cx),
+                ))
+            }
+            (Screen::Devices, _) => {
+                let content = devices::render(self, cx);
+                root.child(ui::fade_in(
+                    "devices",
+                    sidebar::with_sidebar(self, &view, content, cx),
+                ))
+            }
         }
     }
 }

@@ -13,6 +13,8 @@ path = "src/main.rs"
 chrono.workspace = true
 cloister-app-model = { path = "../cloister-app-model" }
 cloister-core = { path = "../cloister-core" }
+cloister-enforcer = { path = "../cloister-enforcer" }
+cloister-sync = { path = "../cloister-sync" }
 # Pin exactly: gpui-kit re-exports GPUI (gpui-pre) and moves fast. See desktop/README.md.
 gpui-kit = "=0.10.0"
 tray-icon = "0.26"

@@ -5,17 +5,33 @@
 use std::time::Duration;
 
 use chrono::Utc;
-use cloister_app_model::{BeginForm, Notice, SocketEnforcer, Today, View};
+use cloister_app_model::{
+    devices_view, open_account, AccountRules, BeginForm, Blocklists, BlocklistsView, DevicesView,
+    Enforcer, Notice, Rules, ServiceRules, SocketEnforcer, Today, View,
+};
+use cloister_core::EntryKind;
+use cloister_enforcer::ipc::Request;
+use cloister_sync::{Device, DeviceSummary, SyncHandle, SyncOptions, SyncStatus};
 use gpui_kit::*;
 
 /// How often the app asks the service for its Blocks. The countdown redraws every second
 /// from the server-time offset in between.
 const REFRESH: Duration = Duration::from_secs(5);
 
+/// How often the Devices list is re-read from the backend.
+const DEVICES_EVERY: Duration = Duration::from_secs(15);
+
 pub struct Cloister {
     today: Today<SocketEnforcer>,
     /// The last notice to show (a refusal, or what was recorded).
     pub notice: Option<Notice>,
+    blocklists: Blocklists<Box<dyn Rules>>,
+    /// The last notice from the Blocklists screen.
+    pub blocklists_notice: Option<Notice>,
+    /// This Device's account, when the backend is configured and it is signed in.
+    account: Option<Device>,
+    devices: Vec<DeviceSummary>,
+    _sync: Option<SyncHandle>,
     _ticker: Task<()>,
 }
 
@@ -27,14 +43,41 @@ impl Cloister {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let mut today = Today::new(SocketEnforcer::from_env());
         today.refresh(Utc::now());
+        let account = open_account().filter(Device::is_signed_in);
+        // Blocklist edits go to the account when signed in (it decides; loosening waits
+        // until tomorrow), else to the local service, which only takes tightening edits.
+        let rules: Box<dyn Rules> = match &account {
+            Some(device) => Box::new(AccountRules(device.clone())),
+            None => Box::new(ServiceRules(SocketEnforcer::from_env())),
+        };
+        let mut blocklists = Blocklists::new(rules);
+        blocklists.refresh();
+        let sync = account
+            .as_ref()
+            .map(|device| device.start_sync(SyncOptions::default()));
         let ticker = cx.spawn(async move |this, cx| {
             let mut since_refresh = Duration::ZERO;
+            let mut since_devices = DEVICES_EVERY;
             loop {
                 cx.background_executor().timer(Duration::from_secs(1)).await;
                 since_refresh += Duration::from_secs(1);
                 let refresh = since_refresh >= REFRESH;
                 if refresh {
                     since_refresh = Duration::ZERO;
+                }
+                since_devices += Duration::from_secs(1);
+                if since_devices >= DEVICES_EVERY {
+                    since_devices = Duration::ZERO;
+                    let account = this.update(cx, |this, _| this.account.clone());
+                    if let Ok(Some(device)) = account {
+                        let listed = cx.background_spawn(async move { device.devices() }).await;
+                        if let Ok(devices) = listed {
+                            let _ = this.update(cx, |this, cx| {
+                                this.devices = devices;
+                                cx.notify();
+                            });
+                        }
+                    }
                 }
                 let alive = this.update(cx, |this, cx| {
                     let now = Utc::now();
@@ -47,6 +90,8 @@ impl Cloister {
                         .is_some_and(|a| a.ends_at <= this.today.server_now(now));
                     if refresh || ended || !before.reachable {
                         this.today.refresh(now);
+                        this.hand_off_to_service();
+                        this.blocklists.refresh();
                     }
                     cx.notify();
                 });
@@ -58,6 +103,11 @@ impl Cloister {
         Cloister {
             today,
             notice: None,
+            blocklists,
+            blocklists_notice: None,
+            account,
+            devices: Vec::new(),
+            _sync: sync,
             _ticker: ticker,
         }
     }
@@ -89,6 +139,91 @@ impl Cloister {
 
     pub fn dismiss_notice(&mut self, cx: &mut Context<Self>) {
         self.notice = None;
+        self.blocklists_notice = None;
         cx.notify();
+    }
+
+    /// Hand what the account knows to the enforcement service (tighten-only on its side),
+    /// and tell the account whether this Device is enforcing.
+    fn hand_off_to_service(&mut self) {
+        let Some(device) = &self.account else { return };
+        let Ok(state) = device.state() else { return };
+        let reached = SocketEnforcer::from_env()
+            .send(&Request::Sync {
+                blocks: state.blocks.clone(),
+                blocklists: Some(state.blocklist_edits()),
+            })
+            .is_ok();
+        let device = device.clone();
+        // A network call: off the main thread.
+        std::thread::spawn(move || {
+            let _ = device.report_enforcing(reached);
+        });
+    }
+
+    pub fn blocklists(&self) -> BlocklistsView {
+        self.blocklists.view()
+    }
+
+    pub fn signed_in(&self) -> bool {
+        self.account.is_some()
+    }
+
+    pub fn devices(&self) -> Option<DevicesView> {
+        let device = self.account.as_ref()?;
+        Some(devices_view(
+            &self.devices,
+            device.sync_status(),
+            device.server_time(),
+            &self.today.zone(),
+        ))
+    }
+
+    pub fn sync_status(&self) -> Option<SyncStatus> {
+        self.account.as_ref().map(Device::sync_status)
+    }
+
+    fn blocklist_result(&mut self, result: Result<Notice, Notice>, cx: &mut Context<Self>) -> bool {
+        let ok = result.is_ok();
+        self.blocklists_notice = Some(result.unwrap_or_else(|n| n));
+        self.today.refresh(Utc::now());
+        cx.notify();
+        ok
+    }
+
+    pub fn add_entry(
+        &mut self,
+        list: &str,
+        kind: EntryKind,
+        input: &str,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let result = self.blocklists.add(list, kind, input);
+        self.blocklist_result(result, cx)
+    }
+
+    pub fn remove_entry(
+        &mut self,
+        list: &str,
+        kind: EntryKind,
+        entry: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let result = self.blocklists.remove(list, kind, entry);
+        self.blocklist_result(result, cx);
+    }
+
+    pub fn set_category(&mut self, list: &str, on: bool, cx: &mut Context<Self>) {
+        let result = if on {
+            self.blocklists.opt_in(list)
+        } else {
+            self.blocklists.opt_out(list)
+        };
+        self.blocklist_result(result, cx);
+    }
+
+    pub fn start_quit_social(&mut self, cx: &mut Context<Self>) {
+        let result = self.blocklists.start_quit_social();
+        self.blocklist_result(result, cx);
     }
 }

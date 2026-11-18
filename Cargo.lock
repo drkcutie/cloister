@@ -904,6 +904,8 @@ dependencies = [
  "chrono",
  "cloister-app-model",
  "cloister-core",
+ "cloister-enforcer",
+ "cloister-sync",
  "gpui-kit",
  "tray-icon",
 ]

@@ -23,6 +23,16 @@ pub trait Rules {
     fn send(&self, command: &Command) -> Result<Result<(), String>, Notice>;
 }
 
+impl<R: Rules + ?Sized> Rules for Box<R> {
+    fn state(&self) -> Result<(State, DateTime<Utc>), Notice> {
+        (**self).state()
+    }
+
+    fn send(&self, command: &Command) -> Result<Result<(), String>, Notice> {
+        (**self).send(command)
+    }
+}
+
 /// The local enforcement service: Blocklist additions and opting back in only.
 pub struct ServiceRules<E>(pub E);
 

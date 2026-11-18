@@ -38,6 +38,14 @@ pub fn clock(t: DateTime<Utc>, zone: &Zone) -> String {
     }
 }
 
+/// "Wed 4 Feb": a day in `zone`.
+pub fn day(t: DateTime<Utc>, zone: &Zone) -> String {
+    match zone {
+        Zone::Local => t.with_timezone(&Local).format("%a %-d %b").to_string(),
+        Zone::Utc => t.format("%a %-d %b").to_string(),
+    }
+}
+
 /// "47:12" under an hour, "1:30:00" from an hour up. Rounded up to the second, so the
 /// countdown reaches 0:00 exactly when the Block ends.
 pub fn countdown(remaining: Duration) -> String {

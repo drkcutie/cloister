@@ -1,6 +1,7 @@
 //! Begin a Deep Session (or, with "counts as deep work" off, a plain Block).
 
 use cloister_app_model::{format, BeginForm, Length, Missing, Notice, View};
+use cloister_core::EntryKind;
 use gpui_kit::component::input::Input;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -15,67 +16,8 @@ pub fn render(
     window: &mut Window,
     cx: &mut Context<MainView>,
 ) -> Div {
-    let p = cx.palette();
-    div().size_full().flex().child(sidebar(&p, view)).child(
-        div()
-            .id("begin-scroll")
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            .overflow_y_scroll()
-            .child(main_column(this, view, window, cx)),
-    )
-}
-
-fn sidebar(p: &Palette, view: &View) -> Div {
-    div()
-        .w(px(240.))
-        .flex_none()
-        .h_full()
-        .bg(p.sunk)
-        .px(px(20.))
-        .py(px(28.))
-        .flex()
-        .flex_col()
-        .gap(px(28.))
-        .child(div().px(space::S3).child(ui::wordmark(p, 26.)))
-        .child(
-            div().flex().flex_col().gap(px(2.)).child(
-                // The only screen so far. Day Plan, Blocklists, Weekly Review and Devices
-                // join here as their tickets land.
-                Type::Body
-                    .apply(div())
-                    .h(px(44.))
-                    .px(space::S3)
-                    .flex()
-                    .items_center()
-                    .bg(p.surface)
-                    .rounded(radius::CONTROL)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(px(15.))
-                    .child("Today"),
-            ),
-        )
-        .child(
-            div()
-                .px(space::S3)
-                .flex()
-                .flex_col()
-                .gap(space::S2)
-                .child(ui::eyebrow(p, "Deep Hours"))
-                .child(
-                    Type::Figure(20.)
-                        .apply(div())
-                        .child(format::hours(view.deep_hours_this_week)),
-                )
-                .child(
-                    Type::Label
-                        .apply(div())
-                        .font_weight(FontWeight::NORMAL)
-                        .text_color(p.ink_2)
-                        .child("this week"),
-                ),
-        )
+    let content = main_column(this, view, window, cx);
+    super::sidebar::with_sidebar(this, view, content, cx)
 }
 
 fn main_column(
@@ -157,7 +99,7 @@ fn main_column(
                         .child(deep_toggle(this, &p, cx))
                         .when(deep, |d| d.child(intent_card(this, &p)))
                         .child(length_card(this, &p, window, cx))
-                        .child(blocklist_card(&p, if deep { "03" } else { "02" })),
+                        .child(blocklist_card(this, &p, if deep { "03" } else { "02" }, cx)),
                 )
                 .child(summary_band(this, view, &p, cx)),
         )
@@ -328,43 +270,160 @@ fn length_card(
     )
 }
 
-fn blocklist_card(p: &Palette, step: &str) -> Div {
-    ui::card(p, step, "Blocklist").child(
-        div()
-            .flex()
-            .flex_wrap()
-            .justify_between()
-            .items_center()
-            .gap(space::S4)
-            .px(px(14.))
-            .py(space::S3)
-            .bg(depth(1))
-            .rounded(radius::CONTROL)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        Type::Body
-                            .apply(div())
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("Distraction List"),
-                    )
-                    .child(
-                        Type::Label
-                            .apply(div())
-                            .font_weight(FontWeight::NORMAL)
-                            .text_color(p.ink)
-                            .child("Social, news, video, shopping, forums"),
-                    ),
-            )
-            .child(
-                Type::Label
-                    .apply(div())
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child("Always on"),
-            ),
-    )
+fn blocklist_card(this: &mut MainView, p: &Palette, step: &str, cx: &mut Context<MainView>) -> Div {
+    let extras = this
+        .form
+        .extra_domains
+        .iter()
+        .map(|d| (EntryKind::Domain, d.clone()))
+        .chain(
+            this.form
+                .extra_apps
+                .iter()
+                .map(|a| (EntryKind::App, a.clone())),
+        )
+        .map(|(kind, entry)| {
+            let id = SharedString::from(format!("extra-{entry}"));
+            let shown = entry.clone();
+            div()
+                .h(px(36.))
+                .pl(space::S3)
+                .flex()
+                .items_center()
+                .gap(space::S2)
+                .bg(p.surface)
+                .border_1()
+                .border_color(p.line)
+                .rounded(radius::CONTROL)
+                .child(Type::Body.apply(div()).text_size(px(15.)).child(shown))
+                .child(
+                    Type::Label
+                        .apply(div())
+                        .id(id)
+                        .h_full()
+                        .px(space::S3)
+                        .flex()
+                        .items_center()
+                        .text_color(p.ink_2)
+                        .underline()
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.form.remove_extra(kind, &entry);
+                            cx.notify();
+                        }))
+                        .child("Remove"),
+                )
+        })
+        .collect::<Vec<_>>();
+    ui::card(p, step, "Blocklist")
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .justify_between()
+                .items_center()
+                .gap(space::S4)
+                .px(px(14.))
+                .py(space::S3)
+                .bg(depth(1))
+                .rounded(radius::CONTROL)
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            Type::Body
+                                .apply(div())
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child("Distraction List"),
+                        )
+                        .child(
+                            Type::Label
+                                .apply(div())
+                                .font_weight(FontWeight::NORMAL)
+                                .text_color(p.ink)
+                                .child("Social, news, video, shopping, forums"),
+                        ),
+                )
+                .child(
+                    Type::Label
+                        .apply(div())
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child("Always on"),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap(space::S2)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(200.))
+                        .border_b_1()
+                        .border_color(p.ink)
+                        .child(
+                            Input::new(&this.extra)
+                                .appearance(false)
+                                .bordered(false)
+                                .h(px(40.))
+                                .px_0(),
+                        ),
+                )
+                .child(quiet_button(
+                    p,
+                    "add-extra-site",
+                    "Add site",
+                    cx.listener(|this, _, window, cx| {
+                        this.add_extra(EntryKind::Domain, window, cx)
+                    }),
+                ))
+                .child(quiet_button(
+                    p,
+                    "add-extra-app",
+                    "Add app",
+                    cx.listener(|this, _, window, cx| this.add_extra(EntryKind::App, window, cx)),
+                )),
+        )
+        .when(!extras.is_empty(), |d| {
+            d.child(div().flex().flex_wrap().gap(space::S2).children(extras))
+        })
+        .child(
+            Type::Label
+                .apply(div())
+                .font_weight(FontWeight::NORMAL)
+                .text_color(p.ink_3)
+                .child("Extra sites and apps are blocked for this Block only."),
+        )
+}
+
+/// A Quiet button: outlined, 48px tall.
+pub(crate) fn quiet_button(
+    p: &Palette,
+    id: &'static str,
+    label: &'static str,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> Stateful<Div> {
+    Type::Body
+        .apply(div())
+        .id(id)
+        .h(space::TARGET)
+        .px(space::S4)
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .rounded(radius::CONTROL)
+        .border_1()
+        .border_color(p.ink_3)
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_size(px(15.))
+        .cursor_pointer()
+        .hover(|s| s.border_color(depth(3)))
+        .on_click(on_click)
+        .child(label)
 }
 
 fn summary_band(this: &mut MainView, view: &View, p: &Palette, cx: &mut Context<MainView>) -> Div {

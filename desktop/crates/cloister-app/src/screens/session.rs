@@ -36,7 +36,15 @@ pub fn render(
                 .gap(space::S6)
                 .px(px(40.))
                 .py(space::S6)
-                .child(ui::wordmark(&p, 24.))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(space::S6)
+                        .child(ui::wordmark(&p, 24.))
+                        .child(nav_link(&p, "Blocklists", super::Screen::Blocklists, cx))
+                        .child(nav_link(&p, "Devices", super::Screen::Devices, cx)),
+                )
                 .child(
                     div()
                         .flex()
@@ -149,4 +157,22 @@ pub fn render(
                         .child("This Block can't be cancelled."),
                 ),
         )
+}
+
+/// A quiet text link to another screen; the Deep Session stays the hero until it ends.
+fn nav_link(
+    p: &crate::theme::Palette,
+    label: &'static str,
+    screen: super::Screen,
+    cx: &mut Context<MainView>,
+) -> impl IntoElement {
+    Type::Body
+        .apply(div())
+        .id(label)
+        .text_size(px(15.))
+        .text_color(p.ink_2)
+        .underline()
+        .cursor_pointer()
+        .on_click(cx.listener(move |this, _, _, cx| this.show(screen, cx)))
+        .child(label)
 }

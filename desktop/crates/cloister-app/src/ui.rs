@@ -117,6 +117,20 @@ pub fn status(p: &Palette, word: impl Into<SharedString>, on: bool) -> Div {
         )
 }
 
+/// A tag (Deep, Quit-Social Block, ...): a label in a cut-corner box, tone and a line.
+pub fn tag(p: &Palette, text: &str) -> Div {
+    Type::Label
+        .apply(div())
+        .flex_none()
+        .px(space::S2)
+        .bg(p.brass_tint)
+        .border_1()
+        .border_color(p.brass)
+        .rounded(radius::CONTROL)
+        .text_color(p.ink)
+        .child(text.to_string())
+}
+
 /// A square check box drawn with tone and a line (no circles, no pills).
 pub fn check_square(p: &Palette, checked: bool) -> Div {
     div()
