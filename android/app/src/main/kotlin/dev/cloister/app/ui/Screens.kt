@@ -313,7 +313,7 @@ fun SetupScreen(device: Device, now: EnforcementNow, actions: Actions) {
                 Text(
                     "Optional. Makes turning enforcement off impossible rather than recorded. It needs a computer: " +
                         "remove every account from the phone for a moment, then run " +
-                        "adb shell dpm set-device-owner dev.cloister/.enforce.AdminReceiver, then add the accounts back.",
+                        "adb shell dpm set-device-owner dev.cloister/.app.enforce.AdminReceiver, then add the accounts back.",
                     style = Type.detail, color = c.ink2,
                 )
             }

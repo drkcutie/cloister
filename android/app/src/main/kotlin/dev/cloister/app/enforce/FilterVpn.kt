@@ -60,6 +60,7 @@ class FilterVpn : VpnService() {
             stopSelf()
             return
         }
+        Log.i(TAG, "VPN up")
         tun = fd
         running = true
         CloisterApp.instance.enforcer.vpnWanted = true
@@ -181,6 +182,7 @@ class FilterVpn : VpnService() {
             if (domains == blocked) return
             blocked = domains
             filter = DnsFilter(domains) { q -> instance?.upstream(q) }
+            Log.i(TAG, "blocking ${domains.size} domains")
         }
     }
 }
