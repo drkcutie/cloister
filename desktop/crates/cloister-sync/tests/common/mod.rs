@@ -22,8 +22,8 @@ pub fn unique_email(prefix: &str) -> String {
     format!("{prefix}-{nanos}@devices.test")
 }
 
-/// The magic link in the newest email to `email`, as the user would click it.
-pub fn magic_link_for(email: &str) -> String {
+/// The text of the newest email to `email`.
+pub fn email_text_for(email: &str) -> String {
     for _ in 0..50 {
         let search: Value = ureq::get(&format!("{}/api/v1/search", mailpit()))
             .query("query", &format!("to:\"{email}\""))
@@ -37,17 +37,21 @@ pub fn magic_link_for(email: &str) -> String {
                 .unwrap()
                 .into_json()
                 .unwrap();
-            let text = message["Text"].as_str().unwrap_or_default();
-            let start = text.find("http").expect("a link in the email");
-            let link: String = text[start..]
-                .chars()
-                .take_while(|c| !c.is_whitespace() && *c != ')' && *c != ']')
-                .collect();
-            return link;
+            return message["Text"].as_str().unwrap_or_default().to_string();
         }
         std::thread::sleep(Duration::from_millis(100));
     }
     panic!("no email arrived for {email}");
+}
+
+/// The magic link in the newest email to `email`, as the user would click it.
+pub fn magic_link_for(email: &str) -> String {
+    let text = email_text_for(email);
+    let start = text.find("http").expect("a link in the email");
+    text[start..]
+        .chars()
+        .take_while(|c| !c.is_whitespace() && *c != ')' && *c != ']')
+        .collect()
 }
 
 /// Sign in with the email magic link, clicking it in place of the user.

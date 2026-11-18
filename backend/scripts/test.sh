@@ -15,6 +15,8 @@ eval "$(supabase status -o env 2>/dev/null | grep -E '^(API_URL|ANON_KEY|DB_URL|
 export CLOISTER_DB_URL="$DB_URL" CLOISTER_API_URL="$API_URL" CLOISTER_ANON_KEY="$ANON_KEY"
 export CLOISTER_MAILPIT_URL="${MAILPIT_URL:-$INBUCKET_URL}"
 cd "$root"
+command -v cargo >/dev/null || . "$HOME/.cargo/env"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/cloister-target}"
 status=0
 cargo test -p cloister-sync -- --ignored --test-threads=1 || status=$?
 if [ "${1:-}" = "--stop" ]; then (cd "$root/backend" && supabase stop); fi

@@ -5,9 +5,14 @@ edition.workspace = true
 license.workspace = true
 version.workspace = true
 
+[[bin]]
+name = "cloister-device"
+path = "src/bin/cloister-device.rs"
+
 [dependencies]
 chrono.workspace = true
 cloister-core = { path = "../cloister-core" }
+cloister-enforcer = { path = "../cloister-enforcer" }
 serde.workspace = true
 serde_json.workspace = true
 base64 = "0.22"

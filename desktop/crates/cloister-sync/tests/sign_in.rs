@@ -67,3 +67,20 @@ fn magic_link_signs_in_and_the_session_refreshes() {
     assert_eq!(refreshed.user_id, session.user_id);
     assert_ne!(refreshed.refresh_token, session.refresh_token, "refresh tokens rotate");
 }
+
+#[test]
+#[ignore = "needs a local Supabase; run backend/scripts/test.sh"]
+fn the_emailed_code_signs_in_on_another_computer() {
+    let backend = common::backend();
+    let email = common::unique_email("code");
+    let redirect = LoopbackRedirect::bind().unwrap();
+    backend.send_magic_link(&email, &redirect.url(), &Pkce::new()).unwrap();
+    let text = common::email_text_for(&email);
+    let code: String = text
+        .split_whitespace()
+        .find(|w| w.len() == 6 && w.chars().all(|c| c.is_ascii_digit()))
+        .expect("a 6-digit code in the email")
+        .to_string();
+    let session = backend.verify_email_code(&email, &code).unwrap();
+    assert_eq!(session.email.as_deref(), Some(email.as_str()));
+}

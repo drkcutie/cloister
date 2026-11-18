@@ -235,6 +235,11 @@ otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
+# The sign-in email carries both the link (PKCE, opened on the same computer) and the 6-digit code.
+[auth.email.template.magic_link]
+subject = "Sign in to Cloister"
+content_path = "./supabase/templates/magic_link.html"
+
 # Use a production-ready SMTP server
 # [auth.email.smtp]
 # enabled = true
