@@ -1,4 +1,6 @@
-use cloister_core::{Command, CONFIRM_LONG_AFTER, MAX_BLOCK};
+use cloister_core::{
+    normalize_app, normalize_domain, Command, EntryKind, CONFIRM_LONG_AFTER, MAX_BLOCK,
+};
 
 /// How long the Block will be.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,6 +31,10 @@ pub struct BeginForm {
     pub deep: bool,
     /// The "can't be undone" confirmation for Blocks over 4 hours.
     pub long_confirmed: bool,
+    /// Sites blocked for this Block only, on top of the Distraction List (which is always in).
+    pub extra_domains: Vec<String>,
+    /// Apps blocked for this Block only.
+    pub extra_apps: Vec<String>,
 }
 
 impl Default for BeginForm {
@@ -38,6 +44,8 @@ impl Default for BeginForm {
             length: Length::Preset(90),
             deep: true,
             long_confirmed: false,
+            extra_domains: Vec::new(),
+            extra_apps: Vec::new(),
         }
     }
 }
@@ -82,6 +90,31 @@ impl BeginForm {
         }
     }
 
+    /// Add a site (as typed: a URL is fine) or an app for this Block only. `false` when it
+    /// isn't a domain or an app name; nothing is added then.
+    pub fn add_extra(&mut self, kind: EntryKind, input: &str) -> bool {
+        let (list, entry) = match kind {
+            EntryKind::Domain => (
+                &mut self.extra_domains,
+                normalize_domain(&crate::blocklists::site_input(input)),
+            ),
+            EntryKind::App => (&mut self.extra_apps, normalize_app(input)),
+        };
+        let Some(entry) = entry else { return false };
+        if !list.contains(&entry) {
+            list.push(entry);
+        }
+        true
+    }
+
+    /// Take an extra off again (before the Block begins).
+    pub fn remove_extra(&mut self, kind: EntryKind, entry: &str) {
+        match kind {
+            EntryKind::Domain => self.extra_domains.retain(|e| e != entry),
+            EntryKind::App => self.extra_apps.retain(|e| e != entry),
+        }
+    }
+
     pub(crate) fn command(&self, block_id: String, minutes: i64) -> Command {
         Command::StartBlock {
             block_id,
@@ -91,8 +124,8 @@ impl BeginForm {
             confirm_long: self.long_confirmed && self.is_long(),
             client_time: None,
             intent: self.deep.then(|| self.intent.trim().to_string()),
-            extra_domains: vec![],
-            extra_apps: vec![],
+            extra_domains: self.extra_domains.clone(),
+            extra_apps: self.extra_apps.clone(),
         }
     }
 }

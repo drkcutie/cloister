@@ -29,6 +29,9 @@ pub struct View {
     pub rating: Option<RatingPrompt>,
     /// Deep Sessions started this ISO week, at full length.
     pub deep_hours_this_week: Duration,
+    /// The running Quit-Social Block, if any: when it ends. It runs alongside everything
+    /// else, so it is shown as a tag, never as the hero.
+    pub quit_social_ends: Option<DateTime<Utc>>,
 }
 
 /// The running Block (a Deep Session unless `deep` is false).
@@ -115,7 +118,7 @@ impl<E: Enforcer> Today<E> {
         let active = self
             .blocks
             .iter()
-            .filter(|b| b.is_active(now))
+            .filter(|b| b.is_active(now) && !b.quit_social)
             .max_by_key(|b| b.ends_at)
             .map(|b| ActiveSession {
                 block_id: b.id.clone(),
@@ -142,6 +145,12 @@ impl<E: Enforcer> Today<E> {
             active,
             rating,
             deep_hours_this_week: self.deep_hours_since(self.zone.week_start(now)),
+            quit_social_ends: self
+                .blocks
+                .iter()
+                .filter(|b| b.quit_social && b.is_active(now))
+                .map(|b| b.ends_at)
+                .max(),
         }
     }
 
