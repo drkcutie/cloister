@@ -1,0 +1,26 @@
+{
+  "name": "ritual-due-at-shutdown-time",
+  "description": "The Shutdown Ritual of a Workday becomes due at its Shutdown Time and stays due, over Rest Days too, until it is completed or the next Workday Start.",
+  "initial_state": {
+    "blocks": [],
+    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" }
+  },
+  "steps": [
+    { "server_time": "2026-01-09T16:59:59Z", "expect": { "enforcement": { "ritual": "missed" } } },
+    {
+      "server_time": "2026-01-09T16:59:59Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete" },
+      "expect": { "outcome": "rejected", "reason": "ritual_not_due" }
+    },
+    {
+      "server_time": "2026-01-09T17:00:00Z",
+      "expect": { "enforcement": { "ritual": "due", "blocked_domains_include": ["github.com", "youtube.com"] } }
+    },
+    { "server_time": "2026-01-10T12:00:00Z", "expect": { "enforcement": { "ritual": "due" } } },
+    { "server_time": "2026-01-11T23:59:59Z", "expect": { "enforcement": { "ritual": "due" } } },
+    { "server_time": "2026-01-12T08:59:59Z", "expect": { "enforcement": { "ritual": "due" } } },
+    { "server_time": "2026-01-12T09:00:00Z", "expect": { "enforcement": { "ritual": "missed", "blocked_domains": [] } } },
+    { "server_time": "2026-01-12T16:59:59Z", "expect": { "enforcement": { "ritual": "missed" } } },
+    { "server_time": "2026-01-12T17:00:00Z", "expect": { "enforcement": { "ritual": "due" } } }
+  ]
+}

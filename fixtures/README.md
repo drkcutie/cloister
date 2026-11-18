@@ -158,6 +158,19 @@ A Block may also have `extra_domains` and `extra_apps` (sorted; omitted when emp
 in force as of the last `change_settings`; `pending_settings`, once `effective_at` has passed, replace them (an
 engine computes this from the time; nothing rewrites the state until the next `change_settings`).
 
+**Shutdown Ritual records** (each omitted when empty):
+
+```json
+{
+  "loose_ends": [{ "id": "l1", "text": "Send the invoice", "captured_at": "2026-01-05T17:02:00Z" }],
+  "rituals": [{ "date": "2026-01-05", "completed_at": "2026-01-05T17:10:00Z" }],
+  "shutdown_delays": [{ "date": "2026-01-05", "used_at": "2026-01-05T16:00:00Z" }]
+}
+```
+
+`loose_ends` are sorted by `(captured_at, id)`; `rituals` (completed ones only) and `shutdown_delays` by `date`, the
+local Workday they belong to.
+
 Entries and removals are sorted by `(blocklist, kind, entry)` in byte order (`app` before `domain`), opt-outs by
 `blocklist`. Removals and opt-outs stay after they take effect; adding the entry again (or opting in) deletes them.
 
@@ -176,6 +189,10 @@ Entries and removals are sorted by `(blocklist, kind, entry)` in byte order (`ap
 | `opt_out_of_blocklist` | `blocklist` | Distraction List categories only. From the next day boundary, new Blocks leave the category out. A running Block keeps it. |
 | `opt_in_to_blocklist` | `blocklist` | Drops an opt-out, pending or in force. Applies immediately, also to running Blocks. |
 | `change_settings` | `workdays`, `workday_start`, `shutdown_time`, `time_zone` (optional) | See **Settings and Evening Lockdown** below. |
+| `capture_loose_end` | `loose_end_id`, `text` | Adds a Loose End at server time. The text is trimmed and must be 1 to 500 characters. |
+| `close_loose_end` | `loose_end_id` | Removes a Loose End from the list. |
+| `use_shutdown_delay` | (none) | See **Shutdown Ritual** below. |
+| `complete_ritual` | `typed` | Completes the due ritual. See **Shutdown Ritual** below. |
 | `start_quit_social_block` | `block_id`, `confirm_long` (default `false`, must be `true`) | A 30-day plain Block of the Social list only (`quit_social: true`): the one exception to the 24-hour cap. Can't be extended (any end past 24 hours is `block_too_long`). |
 
 `start_block` also takes `extra_domains` and `extra_apps` (default `[]`): sites and apps blocked for that Block only.
@@ -207,6 +224,31 @@ A plain Block still starts. Deep Slots and running Blocks are untouched.
 With settings, `write_day_plan` for a Rest Day is `rest_day`, and its `starts_at`/`ends_at` must equal that
 date's Workday Start and Shutdown Time (else `invalid_day_plan`), using the settings in force at the later of
 server time and the date's local midnight. These checks come before the other Day Plan checks.
+
+**Shutdown Ritual.** Every Workday (under the settings, as `write_day_plan` sees them) has a ritual, due at its
+Shutdown Time, or 30 minutes later if a Shutdown Delay was used for that date. The ritual in question at time `t` is
+the latest one due at or before `t` (looking back 15 days). It **lapses** at the first Workday Start after it became
+due (the next Workday Start). Its screen state (`ritual` in Enforcement), checked in this order:
+
+1. `delayed`: a Shutdown Delay was used for today (local) at or before `t`, and today's ritual isn't due yet.
+2. `none`: no ritual has become due, or the latest one was completed and has lapsed.
+3. `completed`: the latest one was completed and hasn't lapsed.
+4. `due`: it wasn't completed and hasn't lapsed.
+5. `missed`: it wasn't completed and has lapsed: a **Missed Ritual** (only completions are stored; a Missed Ritual is
+   a Workday whose ritual lapsed with none). The day then runs on its saved Day Plan or its Schedule, as always.
+
+`complete_ritual` checks, in order: a ritual has become due and hasn't lapsed (`ritual_not_due`), it isn't completed
+(`ritual_already_completed`, checked before the lapse), a Loose End was captured at or after it became due
+(`loose_end_required`), then for the Workday of the next Workday Start (skipped if there is none in two weeks): a saved
+Day Plan (`day_plan_required`) with at least one deep Slot (`deep_slot_required`) whose Slots run end to end from its
+`starts_at` to its `ends_at` (`workday_not_covered`); finally `typed` is exactly `Shutdown complete`
+(`confirmation_mismatch`). It records `{date, completed_at}`.
+
+`use_shutdown_delay` checks: settings exist (`no_shutdown_time`), no Evening Lockdown or Rest Day now (their codes; so
+only on a Workday between Workday Start and Shutdown Time), and no delay yet in the ISO week of today's local date
+(`shutdown_delay_used`). It records `{date: today (local), used_at}`. That day, Evening Lockdown starts 30 minutes after
+Shutdown Time (local wall time, so it may run past midnight) and the ritual is due then. Deep Sessions may start in
+those 30 minutes.
 
 **The ratchet** (`write_day_plan`). The plan in force for the date is the saved one, or the
 Schedule's once its `starts_at` has passed (before that the Schedule is only a draft). Against
@@ -248,6 +290,18 @@ unchanged deep Slot (`slot_in_the_past`); Planned Deep Minutes must not go down
 | `evening_lockdown` | `start_block` of a Deep Session during Evening Lockdown. |
 | `rest_day` | `start_block` of a Deep Session on a Rest Day, or `write_day_plan` for a Rest Day. |
 | `invalid_settings` | Workdays outside 1 to 7 or repeated, a time that isn't `HH:MM`, or Workday Start not before Shutdown Time. |
+| `invalid_loose_end` | A Loose End's text is blank or over 500 characters (after trimming), or its id is blank. |
+| `duplicate_loose_end` | A Loose End with this id exists. |
+| `unknown_loose_end` | No Loose End has this id. |
+| `no_shutdown_time` | `use_shutdown_delay` before any settings exist. |
+| `shutdown_delay_used` | A Shutdown Delay was already used in this ISO week. |
+| `ritual_not_due` | `complete_ritual` with no ritual due (none yet, or it lapsed). |
+| `ritual_already_completed` | `complete_ritual` when the latest ritual is completed. |
+| `loose_end_required` | No Loose End captured since the ritual became due. |
+| `day_plan_required` | The next Workday has no saved Day Plan. |
+| `deep_slot_required` | The next Workday's Day Plan has no deep Slot. |
+| `workday_not_covered` | The next Workday's Slots leave a gap, or don't reach its start or end. |
+| `confirmation_mismatch` | `typed` isn't exactly `Shutdown complete`. |
 | `time_zone_cannot_change` | `change_settings` with a different `time_zone` once settings exist. |
 
 `change_settings` checks: time zone known, then the settings' shape, then a time zone change.

@@ -1,0 +1,37 @@
+{
+  "name": "missed-ritual-runs-on-schedule",
+  "description": "A ritual not completed by the next Workday Start lapses as a Missed Ritual, can no longer be completed, and the day runs on its Schedule.",
+  "initial_state": {
+    "blocks": [],
+    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+    "schedules": [{
+      "id": "weekdays", "time_zone": "UTC", "weekdays": [1, 2, 3, 4, 5], "starts": "09:00", "ends": "17:00",
+      "slots": [{ "starts": "09:00", "ends": "11:00", "label": "Deep work", "deep": true }]
+    }]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-09T17:30:00Z",
+      "command": { "type": "capture_loose_end", "loose_end_id": "l1", "text": "Call the bank" },
+      "expect": { "outcome": "accepted", "enforcement": { "ritual": "due" } }
+    },
+    { "server_time": "2026-01-12T08:59:59Z", "expect": { "enforcement": { "ritual": "due" } } },
+    {
+      "server_time": "2026-01-12T09:00:00Z",
+      "expect": { "enforcement": { "ritual": "missed", "blocked_domains_include": ["youtube.com"], "blocked_domains_exclude": ["github.com"] } }
+    },
+    {
+      "server_time": "2026-01-12T09:05:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete" },
+      "expect": { "outcome": "rejected", "reason": "ritual_not_due" }
+    },
+    {
+      "server_time": "2026-01-12T10:59:59Z",
+      "expect": { "enforcement": { "ritual": "missed", "blocked_domains_include": ["youtube.com"] } }
+    },
+    {
+      "server_time": "2026-01-12T11:00:00Z",
+      "expect": { "enforcement": { "ritual": "missed", "blocked_domains": [] } }
+    }
+  ]
+}

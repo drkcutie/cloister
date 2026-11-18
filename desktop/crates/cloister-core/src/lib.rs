@@ -11,6 +11,7 @@
 mod blocklists;
 mod catalog;
 mod day_plan;
+mod ritual;
 mod settings;
 
 use std::collections::BTreeSet;
@@ -27,6 +28,10 @@ pub use catalog::{related_domains, Blocklist, BlocklistKind, Catalog};
 pub use day_plan::{
     day_plan, planned_deep_minutes, planned_deep_sessions, schedule_plan, DayPlan, Schedule,
     ScheduleSlot, Slot, SlotInput,
+};
+pub use ritual::{
+    next_workday_plan, ritual, ritual_due_at, ritual_screen, shutdown_delays_left, LooseEnd,
+    Ritual, RitualStatus, ShutdownDelay, MAX_LOOSE_END, SHUTDOWN_COMPLETE, SHUTDOWN_DELAY,
 };
 pub use settings::{
     lockdown, next_workday_start, settings_at, workday, Lockdown, PendingSettings, Settings,
@@ -67,6 +72,15 @@ pub struct State {
     /// Requested settings that loosen something, waiting for the next day boundary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_settings: Option<PendingSettings>,
+    /// The open Loose Ends, carried between days until closed. Sorted by capture, then id.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub loose_ends: Vec<LooseEnd>,
+    /// Completed Shutdown Rituals, sorted by date.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rituals: Vec<Ritual>,
+    /// Shutdown Delays used, sorted by date.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shutdown_delays: Vec<ShutdownDelay>,
 }
 
 impl Default for State {
@@ -81,6 +95,9 @@ impl Default for State {
             blocklist_opt_outs: Vec::new(),
             settings: None,
             pending_settings: None,
+            loose_ends: Vec::new(),
+            rituals: Vec::new(),
+            shutdown_delays: Vec::new(),
         }
     }
 }
@@ -217,6 +234,15 @@ pub enum Command {
         #[serde(default)]
         time_zone: Option<String>,
     },
+    /// Add a Loose End (text trimmed, 1 to 500 characters).
+    CaptureLooseEnd { loose_end_id: String, text: String },
+    /// Close a Loose End: it leaves the list.
+    CloseLooseEnd { loose_end_id: String },
+    /// Postpone today's ritual and Evening Lockdown by 30 minutes. Once per ISO week, on a
+    /// Workday before its Shutdown Time.
+    UseShutdownDelay {},
+    /// Complete the due Shutdown Ritual. `typed` must be exactly "Shutdown complete".
+    CompleteRitual { typed: String },
 }
 
 /// How long the Quit-Social Block lasts: the one exception to the 24-hour cap.
@@ -262,6 +288,18 @@ pub enum Reason {
     RestDay,
     InvalidSettings,
     TimeZoneCannotChange,
+    InvalidLooseEnd,
+    DuplicateLooseEnd,
+    UnknownLooseEnd,
+    NoShutdownTime,
+    ShutdownDelayUsed,
+    RitualNotDue,
+    RitualAlreadyCompleted,
+    LooseEndRequired,
+    DayPlanRequired,
+    DeepSlotRequired,
+    WorkdayNotCovered,
+    ConfirmationMismatch,
 }
 
 impl Reason {
@@ -297,6 +335,18 @@ impl Reason {
             Reason::RestDay => "rest_day",
             Reason::InvalidSettings => "invalid_settings",
             Reason::TimeZoneCannotChange => "time_zone_cannot_change",
+            Reason::InvalidLooseEnd => "invalid_loose_end",
+            Reason::DuplicateLooseEnd => "duplicate_loose_end",
+            Reason::UnknownLooseEnd => "unknown_loose_end",
+            Reason::NoShutdownTime => "no_shutdown_time",
+            Reason::ShutdownDelayUsed => "shutdown_delay_used",
+            Reason::RitualNotDue => "ritual_not_due",
+            Reason::RitualAlreadyCompleted => "ritual_already_completed",
+            Reason::LooseEndRequired => "loose_end_required",
+            Reason::DayPlanRequired => "day_plan_required",
+            Reason::DeepSlotRequired => "deep_slot_required",
+            Reason::WorkdayNotCovered => "workday_not_covered",
+            Reason::ConfirmationMismatch => "confirmation_mismatch",
         }
     }
 }
@@ -539,6 +589,14 @@ fn apply(state: &State, command: &Command, now: DateTime<Utc>) -> Result<State, 
             time_zone.as_deref(),
             now,
         )?,
+        Command::CaptureLooseEnd { loose_end_id, text } => {
+            ritual::capture_loose_end(&mut next, loose_end_id, text, now)?
+        }
+        Command::CloseLooseEnd { loose_end_id } => {
+            ritual::close_loose_end(&mut next, loose_end_id)?
+        }
+        Command::UseShutdownDelay {} => ritual::use_shutdown_delay(&mut next, now)?,
+        Command::CompleteRitual { typed } => ritual::complete_ritual(&mut next, typed, now)?,
     }
     Ok(next)
 }
@@ -601,6 +659,6 @@ pub fn enforcement(state: &State, server_time: DateTime<Utc>) -> Enforcement {
     Enforcement {
         blocked_domains: domains.into_iter().collect(),
         blocked_apps: apps.into_iter().collect(),
-        ritual: RitualScreen::None,
+        ritual: ritual_screen(state, server_time),
     }
 }

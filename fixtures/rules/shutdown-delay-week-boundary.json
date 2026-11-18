@@ -1,0 +1,45 @@
+{
+  "name": "shutdown-delay-week-boundary",
+  "description": "The ISO week of a Shutdown Delay is that of the local date, not of UTC; a delay at a late Shutdown Time runs past midnight.",
+  "initial_state": {
+    "blocks": [],
+    "time_zone": "America/New_York",
+    "settings": { "workdays": [1, 2, 3, 4, 5, 6, 7], "workday_start": "09:00", "shutdown_time": "23:30" }
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-12T03:00:00Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-12T04:45:00Z",
+      "expect": { "enforcement": { "ritual": "delayed", "blocked_domains": [] } }
+    },
+    {
+      "server_time": "2026-01-12T05:00:00Z",
+      "expect": { "enforcement": { "ritual": "due", "blocked_domains_include": ["github.com"] } }
+    },
+    {
+      "server_time": "2026-01-12T15:00:00Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "time_zone": "America/New_York",
+          "settings": { "workdays": [1, 2, 3, 4, 5, 6, 7], "workday_start": "09:00", "shutdown_time": "23:30" },
+          "shutdown_delays": [
+            { "date": "2026-01-11", "used_at": "2026-01-12T03:00:00Z" },
+            { "date": "2026-01-12", "used_at": "2026-01-12T15:00:00Z" }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-18T15:00:00Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": { "outcome": "rejected", "reason": "shutdown_delay_used" }
+    }
+  ]
+}

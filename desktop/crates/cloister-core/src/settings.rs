@@ -128,7 +128,9 @@ pub fn lockdown(state: &State, at: DateTime<Utc>) -> Option<Lockdown> {
     }
     let (start, shutdown) = settings.times();
     let time = local.time();
-    (time < start || time >= shutdown).then_some(Lockdown::EveningLockdown)
+    let after_shutdown = time >= shutdown
+        && !crate::ritual::delay_holds_lockdown(state, local.naive_local(), shutdown);
+    (time < start || after_shutdown).then_some(Lockdown::EveningLockdown)
 }
 
 /// The start of local `date` in the account's time zone.
