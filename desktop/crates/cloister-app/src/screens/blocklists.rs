@@ -98,10 +98,9 @@ pub fn render(this: &mut MainView, _window: &mut Window, cx: &mut Context<MainVi
         );
     }
 
-    let mut step = 1;
-    for list in view.distraction.iter().chain(std::iter::once(&view.work)) {
+    let lists = view.distraction.iter().chain(std::iter::once(&view.work));
+    for (step, list) in (1..).zip(lists) {
         column = column.child(list_card(this, &p, list, &format!("{step:02}"), cx));
-        step += 1;
     }
 
     column.child(quit_social_card(this, &p, view.quit_social_ends, &zone, cx))

@@ -138,7 +138,7 @@ fn blocklist_edits_from_the_backend_never_loosen_before_tomorrow_here() {
     assert_eq!(state.time_zone, "Europe/Paris");
     assert!(state.blocks[0].quit_social);
     assert_eq!(state.blocks[0].extra_domains, ["example.com"]);
-    assert_eq!(state.blocklist_entries, [added.clone()]);
+    assert_eq!(state.blocklist_entries, std::slice::from_ref(&added));
     assert_eq!(state.blocklist_removals, [removal("2026-01-05T23:00:00Z")]);
 
     // The backend dropped the removal (the entry was added back) and lost the addition:
