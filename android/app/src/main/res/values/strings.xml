@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Cloister</string>
+    <string name="app_watcher_label">Cloister app blocker</string>
+    <string name="app_watcher_description">Shows a calm overlay when you open an app that is blocked during a Block, and keeps Cloister in place until the Block ends. It reads only which app is in front.</string>
+    <string name="admin_description">Keeps Cloister from being uninstalled during a Block.</string>
+</resources>

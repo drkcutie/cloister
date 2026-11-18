@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug only. testOnly lets `adb shell dpm remove-active-admin` undo Device Owner on an
+     emulator; the receiver lets the emulator smoke test sign in without email. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:testOnly="true">
+        <receiver
+            android:name=".devtools.DebugReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.cloister.DEBUG_SIGN_IN" />
+                <action android:name="dev.cloister.DEBUG_SYNC" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

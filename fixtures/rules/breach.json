@@ -1,0 +1,99 @@
+{
+  "name": "breach",
+  "description": "A Breach is recorded at server time (Breaches sorted by time), once per id, and changes nothing that is enforced.",
+  "initial_state": {
+    "blocks": [
+      {
+        "id": "b1",
+        "starts_at": "2026-01-05T09:00:00Z",
+        "ends_at": "2026-01-05T10:00:00Z",
+        "blocklists": ["forums", "news", "shopping", "social", "video"],
+        "deep": true,
+        "intent": "Draft chapter 3"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:30:00Z",
+      "command": {
+        "type": "record_breach",
+        "breach_id": "phone-1",
+        "kind": "vpn_turned_off",
+        "client_time": "2026-01-05T07:00:00Z"
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:00:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true,
+              "intent": "Draft chapter 3"
+            }
+          ],
+          "breaches": [
+            { "id": "phone-1", "kind": "vpn_turned_off", "occurred_at": "2026-01-05T09:30:00Z" }
+          ]
+        },
+        "enforcement": {
+          "blocked_domains_include": ["youtube.com", "reddit.com"],
+          "blocked_apps": ["com.discord", "com.hnc.Discord"]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:35:00Z",
+      "command": { "type": "record_breach", "breach_id": "phone-1", "kind": "vpn_turned_off" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:00:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true,
+              "intent": "Draft chapter 3"
+            }
+          ],
+          "breaches": [
+            { "id": "phone-1", "kind": "vpn_turned_off", "occurred_at": "2026-01-05T09:30:00Z" }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:40:00Z",
+      "command": { "type": "record_breach", "breach_id": "phone-0", "kind": "app_blocker_turned_off" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:00:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true,
+              "intent": "Draft chapter 3"
+            }
+          ],
+          "breaches": [
+            { "id": "phone-1", "kind": "vpn_turned_off", "occurred_at": "2026-01-05T09:30:00Z" },
+            { "id": "phone-0", "kind": "app_blocker_turned_off", "occurred_at": "2026-01-05T09:40:00Z" }
+          ]
+        },
+        "enforcement": { "blocked_domains_include": ["youtube.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "expect": { "enforcement": { "blocked_domains": [], "blocked_apps": [] } }
+    }
+  ]
+}

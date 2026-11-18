@@ -6,7 +6,7 @@ against every implementation of the rules:
 | Implementation | Runner |
 | --- | --- |
 | Rust (`desktop/crates/cloister-core`) | `desktop/crates/cloister-core/tests/fixtures.rs` (`cargo test -p cloister-core`) |
-| Kotlin (Android) | to be added; must read these files unchanged |
+| Kotlin (Android) | `android/core/src/test/kotlin/dev/cloister/core/SharedFixturesTest.kt` (`cd android && ./gradlew :core:test`) |
 | Postgres triggers (Supabase) | `desktop/crates/cloister-sync/tests/postgres_fixtures.rs` (`backend/scripts/test.sh`, needs Docker) |
 
 A rule is done when every runner agrees on every scenario. Don't copy fixtures into other
@@ -144,6 +144,9 @@ A Block may also have `extra_domains` and `extra_apps` (sorted; omitted when emp
 }
 ```
 
+Breaches are listed as `"breaches": [{ "id": "phone-1", "kind": "vpn_turned_off", "occurred_at": "..." }]`
+(omitted when empty), sorted by `occurred_at`, then `id`.
+
 **Settings** (each omitted until first set):
 
 ```json
@@ -194,6 +197,7 @@ Entries and removals are sorted by `(blocklist, kind, entry)` in byte order (`ap
 | `use_shutdown_delay` | (none) | See **Shutdown Ritual** below. |
 | `complete_ritual` | `typed` | Completes the due ritual. See **Shutdown Ritual** below. |
 | `start_quit_social_block` | `block_id`, `confirm_long` (default `false`, must be `true`) | A 30-day plain Block of the Social list only (`quit_social: true`): the one exception to the 24-hour cap. Can't be extended (any end past 24 hours is `block_too_long`). |
+| `record_breach` | `breach_id`, `kind` (`vpn_turned_off` or `app_blocker_turned_off`), `client_time` (optional, ignored) | Records a Breach at server time. The same `breach_id` again changes nothing, so a Device can resend it. Enforcement is unchanged: recording is the only consequence. |
 
 `start_block` also takes `extra_domains` and `extra_apps` (default `[]`): sites and apps blocked for that Block only.
 Domains are trimmed, lower-cased and lose a trailing dot; they need two or more labels of `a-z`, `0-9` and inner `-`
