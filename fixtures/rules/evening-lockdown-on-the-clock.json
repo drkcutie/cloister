@@ -3,12 +3,13 @@
   "description": "From Shutdown Time until the next Workday Start, Evening Lockdown blocks the Work List and the Distraction List, on the clock alone, with no ritual and no Block.",
   "initial_state": {
     "blocks": [],
-    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" }
+    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+    "settings_since": "2026-01-05T08:00:00Z"
   },
   "steps": [
     {
       "server_time": "2026-01-05T16:59:59Z",
-      "expect": { "enforcement": { "blocked_domains": [], "blocked_apps": [], "ritual": "missed" } }
+      "expect": { "enforcement": { "blocked_domains": [], "blocked_apps": [], "ritual": "none" } }
     },
     {
       "server_time": "2026-01-05T17:00:00Z",

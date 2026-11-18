@@ -157,6 +157,10 @@ Breaches are listed as `"breaches": [{ "id": "phone-1", "kind": "vpn_turned_off"
 }
 ```
 
+`"settings_since": "2026-01-05T14:00:00Z"` (omitted when unknown) is when the first settings were made; `change_settings`
+records it with the first settings and never changes it. A ritual due before it doesn't exist (see **Shutdown Ritual**).
+Without it, every Workday counts.
+
 `workdays` are ISO weekdays, sorted; times are local `HH:MM` in the state's `time_zone`. `settings` are the ones
 in force as of the last `change_settings`; `pending_settings`, once `effective_at` has passed, replace them (an
 engine computes this from the time; nothing rewrites the state until the next `change_settings`).
@@ -170,6 +174,18 @@ engine computes this from the time; nothing rewrites the state until the next `c
   "shutdown_delays": [{ "date": "2026-01-05", "used_at": "2026-01-05T16:00:00Z" }]
 }
 ```
+
+**Weekly Deep Hours target** (each omitted until set):
+
+```json
+{
+  "weekly_target": { "hours": 20 },
+  "pending_weekly_target": { "hours": 15, "effective_at": "2026-01-12T05:00:00Z" }
+}
+```
+
+`weekly_target` is the target in force as of the last change; `pending_weekly_target`, once `effective_at` has
+passed, replaces it (computed from the time, like `pending_settings`).
 
 `loose_ends` are sorted by `(captured_at, id)`; `rituals` (completed ones only) and `shutdown_delays` by `date`, the
 local Workday they belong to.
@@ -195,7 +211,8 @@ Entries and removals are sorted by `(blocklist, kind, entry)` in byte order (`ap
 | `capture_loose_end` | `loose_end_id`, `text` | Adds a Loose End at server time. The text is trimmed and must be 1 to 500 characters. |
 | `close_loose_end` | `loose_end_id` | Removes a Loose End from the list. |
 | `use_shutdown_delay` | (none) | See **Shutdown Ritual** below. |
-| `complete_ritual` | `typed` | Completes the due ritual. See **Shutdown Ritual** below. |
+| `complete_ritual` | `typed`, `weekly_target` (optional, hours) | Completes the due ritual. See **Shutdown Ritual** below. |
+| `set_weekly_target` | `hours` | See **Weekly Deep Hours target** below. |
 | `start_quit_social_block` | `block_id`, `confirm_long` (default `false`, must be `true`) | A 30-day plain Block of the Social list only (`quit_social: true`): the one exception to the 24-hour cap. Can't be extended (any end past 24 hours is `block_too_long`). |
 | `record_breach` | `breach_id`, `kind` (`vpn_turned_off` or `app_blocker_turned_off`), `client_time` (optional, ignored) | Records a Breach at server time. The same `breach_id` again changes nothing, so a Device can resend it. Enforcement is unchanged: recording is the only consequence. |
 
@@ -241,18 +258,33 @@ due (the next Workday Start). Its screen state (`ritual` in Enforcement), checke
 5. `missed`: it wasn't completed and has lapsed: a **Missed Ritual** (only completions are stored; a Missed Ritual is
    a Workday whose ritual lapsed with none). The day then runs on its saved Day Plan or its Schedule, as always.
 
+A ritual is only a ritual if it becomes due at or after `settings_since` (when present), so a new account
+never starts with a Missed Ritual; Evening Lockdown still runs on the clock.
+
 `complete_ritual` checks, in order: a ritual has become due and hasn't lapsed (`ritual_not_due`), it isn't completed
 (`ritual_already_completed`, checked before the lapse), a Loose End was captured at or after it became due
 (`loose_end_required`), then for the Workday of the next Workday Start (skipped if there is none in two weeks): a saved
 Day Plan (`day_plan_required`) with at least one deep Slot (`deep_slot_required`) whose Slots run end to end from its
-`starts_at` to its `ends_at` (`workday_not_covered`); finally `typed` is exactly `Shutdown complete`
-(`confirmation_mismatch`). It records `{date, completed_at}`.
+`starts_at` to its `ends_at` (`workday_not_covered`); then the **Weekly Review**: if the ritual's date is the
+last Workday of its ISO week (no later day of that week is a Workday, as `write_day_plan` sees them),
+`weekly_target` is required (`weekly_review_required`), otherwise it is refused (`weekly_review_not_due`), and it
+must be 1 to 100 (`invalid_weekly_target`); finally `typed` is exactly `Shutdown complete`
+(`confirmation_mismatch`). It records `{date, completed_at}`, then applies `weekly_target` as `set_weekly_target`
+would.
 
-`use_shutdown_delay` checks: settings exist (`no_shutdown_time`), no Evening Lockdown or Rest Day now (their codes; so
-only on a Workday between Workday Start and Shutdown Time), and no delay yet in the ISO week of today's local date
-(`shutdown_delay_used`). It records `{date: today (local), used_at}`. That day, Evening Lockdown starts 30 minutes after
-Shutdown Time (local wall time, so it may run past midnight) and the ritual is due then. Deep Sessions may start in
-those 30 minutes.
+`use_shutdown_delay` checks: settings exist (`no_shutdown_time`); today (local) is a Workday (`rest_day`) and the time
+is from its Workday Start until 30 minutes after its Shutdown Time (`evening_lockdown`), so it can also be used from
+the ritual; today's ritual isn't completed (`ritual_already_completed`); and no delay yet in the ISO week of today's
+local date (`shutdown_delay_used`). It records `{date: today (local), used_at}`. That day, Evening Lockdown starts 30
+minutes after Shutdown Time (local wall time, so it may run past midnight) and the ritual is due then; used after
+Shutdown Time, it lifts Evening Lockdown until then. Deep Sessions may start in those 30 minutes. A Loose End for the
+ritual must then be captured after the new due time.
+
+**Weekly Deep Hours target.** `set_weekly_target` takes `hours` from 1 to 100 (`invalid_weekly_target`). Without a
+target in force it applies at once. Otherwise the new `weekly_target` is the higher of the one in force and the
+request (raising applies now); if that differs from the request, the request becomes `pending_weekly_target` from the
+next **week boundary** (the first local Monday midnight after server time, in `time_zone`), replacing any earlier
+pending one; otherwise there is none.
 
 **The ratchet** (`write_day_plan`). The plan in force for the date is the saved one, or the
 Schedule's once its `starts_at` has passed (before that the Schedule is only a draft). Against
@@ -306,11 +338,33 @@ unchanged deep Slot (`slot_in_the_past`); Planned Deep Minutes must not go down
 | `deep_slot_required` | The next Workday's Day Plan has no deep Slot. |
 | `workday_not_covered` | The next Workday's Slots leave a gap, or don't reach its start or end. |
 | `confirmation_mismatch` | `typed` isn't exactly `Shutdown complete`. |
+| `invalid_weekly_target` | A weekly target outside 1 to 100 hours. |
+| `weekly_review_required` | `complete_ritual` on the last Workday of the week without `weekly_target`. |
+| `weekly_review_not_due` | `complete_ritual` with `weekly_target` on another day. |
 | `time_zone_cannot_change` | `change_settings` with a different `time_zone` once settings exist. |
 
 `change_settings` checks: time zone known, then the settings' shape, then a time zone change.
 Checks run in this order: day bounds, Slots, overlap, ids, then the ratchet; for Schedules:
 time zone, weekdays and times, Slots, overlap, other Schedules.
+
+## Scoreboard scenarios (`fixtures/review`)
+
+`fixtures/review/*.json` pin the scoreboard and Weekly Review figures (`week_summary` in Rust, `Review.weekSummary` in
+Kotlin; the backend doesn't compute them). Each file is `{name, description, state, at, expect}`; `expect` is the
+summary for the ISO week (local) holding `at`, compared as JSON exactly:
+
+| Key | Meaning |
+| --- | --- |
+| `week_start` | The Monday (local date). |
+| `target_hours` / `next_week_target_hours` | The target in force at `at` / at the next week boundary; `null` when none. |
+| `deep_minutes_by_day` | Seven local days, Monday first: minutes of deep Blocks and deep Slots (saved or Schedule-filled plans) inside each day, up to `at`. A session's id counts once. |
+| `deep_minutes` | Their sum. |
+| `depth_trend` | Depth Ratings of the rated Deep Sessions started in the 30 days up to `at`, oldest first, the last 10. |
+| `missed_rituals` | Dates of this week whose ritual lapsed by `at` with no completion. |
+| `shutdown_delays` | Dates of this week with a Shutdown Delay. |
+| `breaches` | Breaches recorded in this week, as in the state. |
+
+Runners: `desktop/crates/cloister-core/tests/review.rs`, `android/core/src/test/.../ReviewFixturesTest.kt`.
 
 ## Adding a scenario
 

@@ -26,6 +26,25 @@ class MirrorMergeTest {
     }
 
     @Test
+    fun ritualRecordsAndTheWeeklyTargetAreTakenFromTheBackend() {
+        val incoming = State(
+            looseEnds = listOf(LooseEnd("l1", "Send the invoice", t("2026-01-05T17:02:00Z"))),
+            rituals = listOf(Ritual(java.time.LocalDate.parse("2026-01-05"), t("2026-01-05T17:10:00Z"))),
+            shutdownDelays = listOf(ShutdownDelay(java.time.LocalDate.parse("2026-01-05"), t("2026-01-05T16:00:00Z"))),
+            settingsSince = t("2026-01-01T10:00:00Z"),
+            weeklyTarget = WeeklyTarget(20),
+            pendingWeeklyTarget = PendingWeeklyTarget(15, t("2026-01-12T00:00:00Z")),
+        )
+        val merged = MirrorMerge.merge(State(), incoming, now)
+        assertEquals(incoming.looseEnds, merged.looseEnds)
+        assertEquals(incoming.rituals, merged.rituals)
+        assertEquals(incoming.shutdownDelays, merged.shutdownDelays)
+        assertEquals(incoming.settingsSince, merged.settingsSince)
+        assertEquals(incoming.weeklyTarget, merged.weeklyTarget)
+        assertEquals(incoming.pendingWeeklyTarget, merged.pendingWeeklyTarget)
+    }
+
+    @Test
     fun aBlockIsNeverShortenedOrDropped() {
         val local = State(blocks = listOf(block("a", "2026-01-05T11:00:00Z")))
         val merged = MirrorMerge.merge(local, State(blocks = listOf(block("a", "2026-01-05T10:00:00Z"))), now)

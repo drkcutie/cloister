@@ -18,5 +18,7 @@ tasks.test {
     // Seam A: the shared scenarios, read in place (never copied).
     systemProperty("cloister.fixtures", rootDir.resolve("../fixtures/rules").absolutePath)
     inputs.dir(rootDir.resolve("../fixtures/rules"))
+    systemProperty("cloister.reviewFixtures", rootDir.resolve("../fixtures/review").absolutePath)
+    inputs.dir(rootDir.resolve("../fixtures/review"))
     testLogging { events("failed"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
 }

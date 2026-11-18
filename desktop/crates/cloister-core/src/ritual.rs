@@ -6,14 +6,19 @@
 //! Ritual is a Workday whose ritual lapsed with no completion, so it is recorded by the
 //! absence of one and every engine derives it the same way.
 //!
-//! A Shutdown Delay can be used once per ISO week (of the local date), on a Workday before its
-//! Shutdown Time. It postpones both the ritual and Evening Lockdown by 30 minutes.
+//! A Shutdown Delay can be used once per ISO week (of the local date), on a Workday from
+//! Workday Start until 30 minutes after Shutdown Time (so also from the ritual), while that
+//! day's ritual isn't completed. It postpones both the ritual and Evening Lockdown to 30 minutes
+//! after Shutdown Time.
+//!
+//! A ritual due before the account's first settings (`settings_since`) doesn't exist, so a new
+//! account never starts with a Missed Ritual.
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
-use crate::settings::{lockdown, next_workday_start, workday, Workday};
+use crate::settings::{next_workday_start, workday, Workday};
 use crate::{day_plan, Reason, RitualScreen, State};
 
 /// How long a Shutdown Delay postpones the ritual and Evening Lockdown.
@@ -81,9 +86,10 @@ fn delay_for(state: &State, date: NaiveDate) -> Option<&ShutdownDelay> {
     state.shutdown_delays.iter().find(|d| d.date == date)
 }
 
-/// When the ritual of `date` becomes due, as seen at `now`. `None` if `date` isn't a Workday.
+/// When the ritual of `date` becomes due, as seen at `now`. `None` if `date` isn't a Workday,
+/// or the ritual would be due before the first settings were made.
 pub fn ritual_due_at(state: &State, date: NaiveDate, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
-    match workday(state, date, now) {
+    let due = match workday(state, date, now) {
         Workday::Bounds(_, shutdown) => Some(
             shutdown
                 + if delay_for(state, date).is_some() {
@@ -93,7 +99,16 @@ pub fn ritual_due_at(state: &State, date: NaiveDate, now: DateTime<Utc>) -> Opti
                 },
         ),
         _ => None,
-    }
+    }?;
+    state
+        .settings_since
+        .is_none_or(|since| due >= since)
+        .then_some(due)
+}
+
+/// When a ritual that became due at `due_at` lapses: the next Workday Start.
+pub(crate) fn lapses_at(state: &State, due_at: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    next_workday_start(state, due_at)
 }
 
 /// The latest ritual due at or before `now`, if any.
@@ -106,7 +121,7 @@ pub fn ritual(state: &State, now: DateTime<Utc>) -> Option<RitualStatus> {
             Some(RitualStatus {
                 date,
                 due_at,
-                lapses_at: next_workday_start(state, due_at),
+                lapses_at: lapses_at(state, due_at),
                 completed_at: state
                     .rituals
                     .iter()
@@ -196,12 +211,24 @@ pub(crate) fn close_loose_end(next: &mut State, id: &str) -> Result<(), Reason> 
     Ok(())
 }
 
+/// Whether a Shutdown Delay used at `t` for local `date` is in its window: from that Workday's
+/// Workday Start until 30 minutes after its Shutdown Time.
+fn in_delay_window(state: &State, date: NaiveDate, t: DateTime<Utc>) -> Result<(), Reason> {
+    match workday(state, date, t) {
+        Workday::Bounds(start, shutdown) if start <= t && t < shutdown + SHUTDOWN_DELAY => Ok(()),
+        Workday::Bounds(..) => Err(Reason::EveningLockdown),
+        _ => Err(Reason::RestDay),
+    }
+}
+
 pub(crate) fn use_shutdown_delay(next: &mut State, now: DateTime<Utc>) -> Result<(), Reason> {
     if crate::settings_at(next, now).is_none() {
         return Err(Reason::NoShutdownTime);
     }
-    if let Some(lockdown) = lockdown(next, now) {
-        return Err(lockdown.reason());
+    let today = local_date(next, now);
+    in_delay_window(next, today, now)?;
+    if next.rituals.iter().any(|r| r.date == today) {
+        return Err(Reason::RitualAlreadyCompleted);
     }
     if shutdown_delays_left(next, now) == 0 {
         return Err(Reason::ShutdownDelayUsed);
@@ -217,6 +244,7 @@ pub(crate) fn use_shutdown_delay(next: &mut State, now: DateTime<Utc>) -> Result
 pub(crate) fn complete_ritual(
     next: &mut State,
     typed: &str,
+    weekly_target: Option<u16>,
     now: DateTime<Utc>,
 ) -> Result<(), Reason> {
     let status = ritual(next, now).ok_or(Reason::RitualNotDue)?;
@@ -236,6 +264,7 @@ pub(crate) fn complete_ritual(
     if let Some(start) = status.lapses_at {
         tomorrow_is_planned(next, local_date(next, start))?;
     }
+    crate::review::check_weekly_review(next, status.date, weekly_target, now)?;
     if typed != SHUTDOWN_COMPLETE {
         return Err(Reason::ConfirmationMismatch);
     }
@@ -244,6 +273,9 @@ pub(crate) fn complete_ritual(
         completed_at: now,
     });
     next.rituals.sort_by_key(|r| r.date);
+    if let Some(hours) = weekly_target {
+        crate::review::set_weekly_target(next, hours, now)?;
+    }
     Ok(())
 }
 
@@ -286,6 +318,9 @@ impl State {
     /// Shutdown Time, in an ISO week with no other delay; a completion of a ritual that had
     /// become due, with the next Workday planned (deep Slot, whole Workday covered) in this
     /// state's Day Plans. Known records are never dropped. Returns whether anything changed.
+    ///
+    /// A delay is taken when used in its window (Workday Start to 30 minutes after Shutdown
+    /// Time) before that day's ritual was completed.
     pub fn merge_ritual_records(
         &mut self,
         delays: &[ShutdownDelay],
@@ -302,11 +337,14 @@ impl State {
                 .shutdown_delays
                 .iter()
                 .any(|d| iso_week(d.date) == week);
-            let before_shutdown = matches!(
-                workday(self, delay.date, now),
-                Workday::Bounds(_, shutdown) if delay.used_at < shutdown && delay.used_at <= now
-            );
-            if week_free && before_shutdown {
+            let in_window = delay.used_at <= now
+                && local_date(self, delay.used_at) == delay.date
+                && in_delay_window(self, delay.date, delay.used_at).is_ok();
+            let ritual_open = !self
+                .rituals
+                .iter()
+                .any(|r| r.date == delay.date && r.completed_at <= delay.used_at);
+            if week_free && in_window && ritual_open {
                 self.shutdown_delays.push(delay.clone());
                 self.shutdown_delays.sort_by_key(|d| d.date);
                 changed = true;
@@ -350,14 +388,14 @@ mod tests {
     }
 
     #[test]
-    fn a_synced_delay_is_taken_once_per_week_and_only_before_shutdown() {
+    fn a_synced_delay_is_taken_once_per_week_and_only_in_its_window() {
         let mut state = weekdays();
         let now = at("2026-01-05T16:10:00Z");
         let late = ShutdownDelay {
             date: "2026-01-05".parse().unwrap(),
-            used_at: at("2026-01-05T17:05:00Z"),
+            used_at: at("2026-01-05T17:30:00Z"),
         };
-        assert!(!state.merge_ritual_records(&[late], &[], at("2026-01-05T17:06:00Z")));
+        assert!(!state.merge_ritual_records(&[late], &[], at("2026-01-05T17:31:00Z")));
         let ok = ShutdownDelay {
             date: "2026-01-05".parse().unwrap(),
             used_at: at("2026-01-05T16:00:00Z"),
@@ -369,6 +407,30 @@ mod tests {
         assert!(state.merge_ritual_records(&[ok.clone(), again], &[], at("2026-01-07T11:00:00Z")));
         assert_eq!(state.shutdown_delays, vec![ok]);
         assert_eq!(ritual_screen(&state, now), RitualScreen::Delayed);
+    }
+
+    #[test]
+    fn a_new_service_takes_the_settings_start_and_a_known_one_only_moves_it_earlier() {
+        let synced = Some(at("2026-01-05T18:00:00Z"));
+        let mut fresh = State::default();
+        fresh.merge_settings_since(synced);
+        assert_eq!(fresh.settings_since, synced);
+        // Configured without a known start: every Workday counts here already, so it stays.
+        let mut known = weekdays();
+        known.merge_settings_since(synced);
+        assert_eq!(known.settings_since, None);
+        known.settings_since = Some(at("2026-01-05T12:00:00Z"));
+        known.merge_settings_since(synced);
+        assert_eq!(known.settings_since, Some(at("2026-01-05T12:00:00Z")));
+        known.merge_settings_since(Some(at("2026-01-04T12:00:00Z")));
+        assert_eq!(known.settings_since, Some(at("2026-01-04T12:00:00Z")));
+        // Before the start, a Workday's ritual doesn't come due (no kiosk for a new account).
+        let mut new = weekdays();
+        new.settings_since = Some(at("2026-01-05T18:00:00Z"));
+        assert_eq!(
+            ritual_screen(&new, at("2026-01-05T18:30:00Z")),
+            RitualScreen::None
+        );
     }
 
     #[test]

@@ -113,7 +113,8 @@ object RulesEngine {
         is Command.CaptureLooseEnd -> Rituals.captureLooseEnd(state, command.looseEndId, command.text, now)
         is Command.CloseLooseEnd -> Rituals.closeLooseEnd(state, command.looseEndId)
         is Command.UseShutdownDelay -> Rituals.useShutdownDelay(state, now)
-        is Command.CompleteRitual -> Rituals.completeRitual(state, command.typed, now)
+        is Command.CompleteRitual -> Rituals.completeRitual(state, command.typed, command.weeklyTarget, now)
+        is Command.SetWeeklyTarget -> Review.setWeeklyTarget(state, command.hours, now)
     }
 
     /** A Deep Session is a deep Block or a deep Slot of a saved Day Plan. */

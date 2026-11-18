@@ -130,6 +130,7 @@ impl RitualFlow {
         let state = backend.state().unwrap_or_default();
         let command = Command::CompleteRitual {
             typed: SHUTDOWN_COMPLETE.into(),
+            weekly_target: None,
         };
         match decide(&state, &command, backend.server_time()).outcome {
             Outcome::Accepted => None,
@@ -236,6 +237,7 @@ impl RitualFlow {
     pub fn complete(&mut self, backend: &impl PlanBackend) -> Result<Notice, Notice> {
         let command = Command::CompleteRitual {
             typed: self.typed.clone(),
+            weekly_target: None,
         };
         if let Some(notice) = self.send(backend, &command) {
             return Err(notice);

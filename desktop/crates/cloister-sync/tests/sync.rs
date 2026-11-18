@@ -5,6 +5,8 @@
 mod common;
 
 use std::path::Path;
+
+use chrono::Datelike;
 use std::time::{Duration, Instant};
 
 use cloister_core::{Command, EntryKind, RitualScreen, SlotInput};
@@ -26,13 +28,16 @@ fn device(backend: &Backend, mirror: &Path, name: &str) -> Device {
 
 /// Two Devices signed in to one new account.
 fn two_devices(dir: &Path, prefix: &str) -> (Device, Device) {
+    two_devices_as(dir, &common::unique_email(prefix))
+}
+
+fn two_devices_as(dir: &Path, email: &str) -> (Device, Device) {
     let backend = common::backend();
-    let email = common::unique_email(prefix);
     let a = device(&backend, &dir.join("a.sqlite"), "Desktop A");
-    a.sign_in(common::sign_in(&backend, &email)).unwrap();
+    a.sign_in(common::sign_in(&backend, email)).unwrap();
     std::thread::sleep(Duration::from_millis(1100)); // one sign-in email per second
     let b = device(&backend, &dir.join("b.sqlite"), "Desktop B");
-    b.sign_in(common::sign_in(&backend, &email)).unwrap();
+    b.sign_in(common::sign_in(&backend, email)).unwrap();
     (a, b)
 }
 
@@ -251,7 +256,8 @@ fn ritual(device: &Device) -> RitualScreen {
 #[ignore = "needs a local Supabase; run backend/scripts/test.sh"]
 fn completing_the_ritual_on_one_device_drops_it_on_another() {
     let dir = tempfile::tempdir().unwrap();
-    let (a, b) = two_devices(dir.path(), "ritual");
+    let email = common::unique_email("ritual");
+    let (a, b) = two_devices_as(dir.path(), &email);
     // Every day a Workday from 00:00 to a minute ago (UTC), so the ritual is due now.
     let now = a.server_time();
     let shutdown = (now - chrono::Duration::minutes(1))
@@ -267,6 +273,20 @@ fn completing_the_ritual_on_one_device_drops_it_on_another() {
         time_zone: Some("UTC".into()),
     };
     assert_eq!(a.send(&settings).unwrap(), CommandOutcome::Accepted);
+    // Made now, the settings have no ritual due yet today (none before settings_since), so
+    // date them back a day as the database owner.
+    let url = std::env::var("CLOISTER_DB_URL")
+        .unwrap_or_else(|_| "postgresql://postgres:postgres@127.0.0.1:56422/postgres".into());
+    let mut db = postgres::Client::connect(&url, postgres::NoTls).unwrap();
+    db.batch_execute("set session_replication_role = replica")
+        .unwrap();
+    db.execute(
+        "update public.settings s set settings_since = s.settings_since - interval '1 day'
+         from public.accounts a where a.user_id = s.user_id and a.email = $1",
+        &[&email],
+    )
+    .unwrap();
+    a.pull().unwrap();
     b.pull().unwrap();
     assert_eq!(ritual(&b), RitualScreen::Due);
     let sync = b.start_sync(realtime_only());
@@ -297,6 +317,8 @@ fn completing_the_ritual_on_one_device_drops_it_on_another() {
         },
         Command::CompleteRitual {
             typed: "Shutdown complete".into(),
+            // Every day is a Workday, so Sunday's ritual holds the Weekly Review.
+            weekly_target: (now.weekday() == chrono::Weekday::Sun).then_some(20),
         },
     ];
     for step in steps {

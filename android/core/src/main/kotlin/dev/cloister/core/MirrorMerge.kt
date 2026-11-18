@@ -13,6 +13,8 @@ import java.time.Instant
  * - Day Plans and Schedules are replaced (the backend already applied the ratchet).
  * - Breaches: the union.
  * - Settings: what tightens now is taken now; what loosens waits for the next day boundary.
+ * - Loose Ends, completed rituals, Shutdown Delays, the settings start and the weekly target are
+ *   taken as they are (the backend applied the rules), as the desktop mirror does.
  */
 object MirrorMerge {
     fun merge(local: State, incoming: State, now: Instant): State {
@@ -51,6 +53,12 @@ object MirrorMerge {
             breaches = breaches,
             settings = settings,
             pendingSettings = pending,
+            settingsSince = incoming.settingsSince ?: local.settingsSince,
+            weeklyTarget = incoming.weeklyTarget,
+            pendingWeeklyTarget = incoming.pendingWeeklyTarget,
+            looseEnds = incoming.looseEnds,
+            rituals = incoming.rituals,
+            shutdownDelays = incoming.shutdownDelays,
         )
     }
 

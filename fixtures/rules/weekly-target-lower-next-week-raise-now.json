@@ -1,0 +1,82 @@
+{
+  "name": "weekly-target-lower-next-week-raise-now",
+  "description": "Raising the weekly Deep Hours target applies at once; lowering it waits for the next week boundary (local Monday midnight), and a later change replaces what is pending.",
+  "initial_state": { "blocks": [], "time_zone": "America/New_York" },
+  "steps": [
+    {
+      "server_time": "2026-01-07T15:00:00Z",
+      "command": { "type": "set_weekly_target", "hours": 0 },
+      "expect": { "outcome": "rejected", "reason": "invalid_weekly_target" }
+    },
+    {
+      "server_time": "2026-01-07T15:00:00Z",
+      "command": { "type": "set_weekly_target", "hours": 101 },
+      "expect": { "outcome": "rejected", "reason": "invalid_weekly_target" }
+    },
+    {
+      "server_time": "2026-01-07T15:00:00Z",
+      "command": { "type": "set_weekly_target", "hours": 20 },
+      "expect": {
+        "outcome": "accepted",
+        "state": { "blocks": [], "time_zone": "America/New_York", "weekly_target": { "hours": 20 } }
+      }
+    },
+    {
+      "server_time": "2026-01-07T16:00:00Z",
+      "command": { "type": "set_weekly_target", "hours": 15 },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [], "time_zone": "America/New_York", "weekly_target": { "hours": 20 },
+          "pending_weekly_target": { "hours": 15, "effective_at": "2026-01-12T05:00:00Z" }
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-07T17:00:00Z",
+      "command": { "type": "set_weekly_target", "hours": 25 },
+      "expect": {
+        "outcome": "accepted",
+        "state": { "blocks": [], "time_zone": "America/New_York", "weekly_target": { "hours": 25 } }
+      }
+    },
+    {
+      "server_time": "2026-01-07T18:00:00Z",
+      "command": { "type": "set_weekly_target", "hours": 18 },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [], "time_zone": "America/New_York", "weekly_target": { "hours": 25 },
+          "pending_weekly_target": { "hours": 18, "effective_at": "2026-01-12T05:00:00Z" }
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-12T04:59:59Z",
+      "command": { "type": "set_weekly_target", "hours": 20 },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [], "time_zone": "America/New_York", "weekly_target": { "hours": 25 },
+          "pending_weekly_target": { "hours": 20, "effective_at": "2026-01-12T05:00:00Z" }
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-12T05:00:00Z",
+      "command": { "type": "set_weekly_target", "hours": 22 },
+      "expect": {
+        "outcome": "accepted",
+        "state": { "blocks": [], "time_zone": "America/New_York", "weekly_target": { "hours": 22 } }
+      }
+    },
+    {
+      "server_time": "2026-01-12T06:00:00Z",
+      "command": { "type": "set_weekly_target", "hours": 22 },
+      "expect": {
+        "outcome": "accepted",
+        "state": { "blocks": [], "time_zone": "America/New_York", "weekly_target": { "hours": 22 } }
+      }
+    }
+  ]
+}

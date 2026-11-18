@@ -1,0 +1,80 @@
+{
+  "name": "shutdown-delay-from-the-ritual",
+  "description": "A Shutdown Delay can also be used from the ritual, in the 30 minutes after Shutdown Time while today's ritual isn't completed; it lifts Evening Lockdown until Shutdown Time plus 30 minutes.",
+  "initial_state": {
+    "blocks": [],
+    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+    "day_plans": [{
+      "date": "2026-01-13", "starts_at": "2026-01-13T09:00:00Z", "ends_at": "2026-01-13T17:00:00Z",
+      "planned_deep_minutes": 480,
+      "slots": [{ "id": "t1", "starts_at": "2026-01-13T09:00:00Z", "ends_at": "2026-01-13T17:00:00Z", "label": "Write", "deep": true }]
+    }]
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T17:10:00Z",
+      "expect": { "enforcement": { "ritual": "due", "blocked_domains_include": ["github.com"] } }
+    },
+    {
+      "server_time": "2026-01-05T17:10:00Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+          "day_plans": [{
+            "date": "2026-01-13", "starts_at": "2026-01-13T09:00:00Z", "ends_at": "2026-01-13T17:00:00Z",
+            "planned_deep_minutes": 480,
+            "slots": [{ "id": "t1", "starts_at": "2026-01-13T09:00:00Z", "ends_at": "2026-01-13T17:00:00Z", "label": "Write", "deep": true }]
+          }],
+          "shutdown_delays": [{ "date": "2026-01-05", "used_at": "2026-01-05T17:10:00Z" }]
+        },
+        "enforcement": { "ritual": "delayed", "blocked_domains": [], "blocked_apps": [] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T17:20:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 5, "intent": "Send the draft" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-05T17:30:00Z",
+      "expect": { "enforcement": { "ritual": "due", "blocked_domains_include": ["github.com", "youtube.com"] } }
+    },
+    {
+      "server_time": "2026-01-12T08:59:59Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": { "outcome": "rejected", "reason": "evening_lockdown" }
+    },
+    {
+      "server_time": "2026-01-12T17:01:00Z",
+      "command": { "type": "capture_loose_end", "loose_end_id": "l1", "text": "Pay the rent" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-12T17:02:00Z",
+      "command": { "type": "complete_ritual", "typed": "Shutdown complete" },
+      "expect": { "outcome": "accepted", "enforcement": { "ritual": "completed" } }
+    },
+    {
+      "server_time": "2026-01-12T17:03:00Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": { "outcome": "rejected", "reason": "ritual_already_completed" }
+    },
+    {
+      "server_time": "2026-01-13T17:30:00Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": { "outcome": "rejected", "reason": "evening_lockdown" }
+    },
+    {
+      "server_time": "2026-01-13T17:29:59Z",
+      "command": { "type": "use_shutdown_delay" },
+      "expect": { "outcome": "accepted", "enforcement": { "ritual": "delayed", "blocked_domains": [] } }
+    },
+    {
+      "server_time": "2026-01-13T17:30:00Z",
+      "expect": { "enforcement": { "ritual": "due", "blocked_domains_include": ["github.com"] } }
+    }
+  ]
+}

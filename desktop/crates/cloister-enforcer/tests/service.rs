@@ -807,6 +807,7 @@ fn nothing_over_ipc_can_complete_or_delay_the_ritual() {
         Command::UseShutdownDelay {},
         Command::CompleteRitual {
             typed: "Shutdown complete".into(),
+            weekly_target: None,
         },
         Command::CloseLooseEnd {
             loose_end_id: "l1".into(),

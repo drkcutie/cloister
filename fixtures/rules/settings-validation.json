@@ -46,7 +46,8 @@
         "state": {
           "blocks": [],
           "time_zone": "Europe/Paris",
-          "settings": { "workdays": [], "workday_start": "09:00", "shutdown_time": "17:00" }
+          "settings": { "workdays": [], "workday_start": "09:00", "shutdown_time": "17:00" },
+          "settings_since": "2026-01-05T10:00:00Z"
         },
         "enforcement": { "blocked_domains_include": ["github.com", "youtube.com"] }
       }

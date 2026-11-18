@@ -128,7 +128,8 @@ object WorkdaySettings {
             if (configured) throw Rejection(Reason.TimeZoneCannotChange)
             next = next.copy(timeZone = cmd.timeZone)
         }
-        val base = settingsAt(next, now) ?: return next.copy(settings = requested, pendingSettings = null)
+        val base = settingsAt(next, now)
+            ?: return next.copy(settings = requested, pendingSettings = null, settingsSince = next.settingsSince ?: now)
         val inForce = base.tightest(requested)
         val pending = if (inForce != requested) PendingSettings(requested, Blocklists.nextDayBoundary(next, now)) else null
         return next.copy(settings = inForce, pendingSettings = pending)

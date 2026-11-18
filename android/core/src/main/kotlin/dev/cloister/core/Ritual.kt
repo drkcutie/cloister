@@ -61,11 +61,18 @@ object Rituals {
     private fun isoWeek(d: LocalDate) = d.get(IsoFields.WEEK_BASED_YEAR) to d.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR)
     private fun delayFor(state: State, date: LocalDate) = state.shutdownDelays.firstOrNull { it.date == date }
 
-    /** When the ritual of [date] becomes due, as seen at [now]; null if it isn't a Workday. */
+    /**
+     * When the ritual of [date] becomes due, as seen at [now]; null if it isn't a Workday, or the
+     * ritual would be due before the first settings were made.
+     */
     fun ritualDueAt(state: State, date: LocalDate, now: Instant): Instant? {
         val bounds = WorkdaySettings.workday(state, date, now) as? Workday.Bounds ?: return null
-        return if (delayFor(state, date) != null) bounds.end.plus(SHUTDOWN_DELAY) else bounds.end
+        val due = if (delayFor(state, date) != null) bounds.end.plus(SHUTDOWN_DELAY) else bounds.end
+        return due.takeIf { since -> state.settingsSince?.let { !since.isBefore(it) } ?: true }
     }
+
+    /** When a ritual that became due at [dueAt] lapses: the next Workday Start. */
+    fun lapsesAt(state: State, dueAt: Instant): Instant? = WorkdaySettings.nextWorkdayStart(state, dueAt)
 
     /** The latest ritual due at or before [now]. */
     fun ritual(state: State, now: Instant): RitualStatus? {
@@ -74,7 +81,7 @@ object Rituals {
             val date = today.minusDays(n)
             val due = ritualDueAt(state, date, now)?.takeIf { !it.isAfter(now) } ?: continue
             return RitualStatus(
-                date, due, WorkdaySettings.nextWorkdayStart(state, due),
+                date, due, lapsesAt(state, due),
                 state.rituals.firstOrNull { it.date == date }?.completedAt,
             )
         }
@@ -123,23 +130,35 @@ object Rituals {
         return state.copy(looseEnds = state.looseEnds.filter { it.id != id })
     }
 
+    /** A Shutdown Delay is used from Workday Start until 30 minutes after Shutdown Time, on a Workday. */
+    private fun checkDelayWindow(state: State, date: LocalDate, t: Instant) {
+        val bounds = WorkdaySettings.workday(state, date, t) as? Workday.Bounds ?: throw Rejection(Reason.RestDay)
+        if (t.isBefore(bounds.start) || !t.isBefore(bounds.end.plus(SHUTDOWN_DELAY))) {
+            throw Rejection(Reason.EveningLockdown)
+        }
+    }
+
     internal fun useShutdownDelay(state: State, now: Instant): State {
         WorkdaySettings.settingsAt(state, now) ?: throw Rejection(Reason.NoShutdownTime)
-        WorkdaySettings.lockdown(state, now)?.let { throw Rejection(it.reason) }
+        val today = localDate(state, now)
+        checkDelayWindow(state, today, now)
+        if (state.rituals.any { it.date == today }) throw Rejection(Reason.RitualAlreadyCompleted)
         if (shutdownDelaysLeft(state, now) == 0) throw Rejection(Reason.ShutdownDelayUsed)
         return state.copy(
             shutdownDelays = (state.shutdownDelays + ShutdownDelay(localDate(state, now), now)).sortedBy { it.date },
         )
     }
 
-    internal fun completeRitual(state: State, typed: String, now: Instant): State {
+    internal fun completeRitual(state: State, typed: String, weeklyTarget: Int?, now: Instant): State {
         val status = ritual(state, now) ?: throw Rejection(Reason.RitualNotDue)
         if (status.completedAt != null) throw Rejection(Reason.RitualAlreadyCompleted)
         if (status.lapsesAt != null && !status.lapsesAt.isAfter(now)) throw Rejection(Reason.RitualNotDue)
         if (state.looseEnds.none { !it.capturedAt.isBefore(status.dueAt) }) throw Rejection(Reason.LooseEndRequired)
         status.lapsesAt?.let { tomorrowIsPlanned(state, localDate(state, it)) }
+        Review.checkWeeklyReview(state, status.date, weeklyTarget, now)
         if (typed != SHUTDOWN_COMPLETE) throw Rejection(Reason.ConfirmationMismatch)
-        return state.copy(rituals = (state.rituals + Ritual(status.date, now)).sortedBy { it.date })
+        val done = state.copy(rituals = (state.rituals + Ritual(status.date, now)).sortedBy { it.date })
+        return if (weeklyTarget != null) Review.setWeeklyTarget(done, weeklyTarget, now) else done
     }
 
     /** The next Workday has a saved Day Plan with a deep Slot, whose Slots cover it end to end. */
