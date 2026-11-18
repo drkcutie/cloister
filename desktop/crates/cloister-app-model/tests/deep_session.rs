@@ -349,3 +349,85 @@ fn without_the_enforcement_service_nothing_starts_and_it_says_so() {
         notice.text
     );
 }
+
+// Evening Lockdown and Rest Days ------------------------------------------------------------
+
+fn settle_settings(enforcer: &Enforcer) {
+    let answer = ipc::send(
+        &enforcer.socket,
+        &ipc::Request::Sync {
+            blocks: vec![],
+            blocklists: None,
+            planning: Some(ipc::Planning {
+                settings: Some(cloister_core::Settings {
+                    workdays: vec![1, 2, 3, 4, 5],
+                    workday_start: "09:00".into(),
+                    shutdown_time: "17:00".into(),
+                }),
+                ..ipc::Planning::default()
+            }),
+        },
+    )
+    .unwrap();
+    assert!(matches!(answer, ipc::Response::Accepted { .. }));
+}
+
+#[test]
+fn at_shutdown_time_the_app_says_the_workday_has_ended_and_when_the_next_starts() {
+    let enforcer = Enforcer::start("2026-01-05T16:59:00Z");
+    settle_settings(&enforcer);
+    let mut today = enforcer.today();
+    let now = enforcer.clock.now();
+    today.refresh(now);
+    assert!(today.view(now).ended.is_none());
+    assert!(!today.view(now).night());
+
+    enforcer.clock.advance(Duration::minutes(1));
+    let now = enforcer.clock.now();
+    today.refresh(now);
+    let view = today.view(now);
+    let ended = view.ended.clone().expect("Evening Lockdown");
+    assert!(view.night());
+    assert_eq!(ended.headline, "The workday has ended.");
+    assert!(!ended.rest_day);
+    assert_eq!(
+        ended.next_workday_start,
+        Some("2026-01-06T09:00:00Z".parse().unwrap())
+    );
+    assert_eq!(ended.next_start_text, "Workday Start Tue 6 Jan, 09:00.");
+
+    // No Deep Session now: a calm notice naming when work starts again.
+    let refusal = today
+        .begin(&deep_form("One more thing", 60), now)
+        .unwrap_err();
+    assert_eq!(refusal.kind, NoticeKind::WhatIsSo);
+    assert_eq!(
+        refusal.text,
+        "Evening Lockdown. Deep Sessions start again at 09:00."
+    );
+}
+
+#[test]
+fn a_rest_day_is_night_all_day_and_refuses_deep_sessions() {
+    let enforcer = Enforcer::start("2026-01-10T12:00:00Z");
+    settle_settings(&enforcer);
+    let mut today = enforcer.today();
+    let now = enforcer.clock.now();
+    today.refresh(now);
+    let view = today.view(now);
+    assert!(view.night());
+    let ended = view.ended.expect("Rest Day");
+    assert!(ended.rest_day);
+    assert_eq!(ended.next_start_text, "Workday Start Mon 12 Jan, 09:00.");
+    let refusal = today
+        .begin(&deep_form("Weekend push", 60), now)
+        .unwrap_err();
+    assert_eq!(
+        refusal.text,
+        "A Rest Day. Deep Sessions start again Mon 12 Jan, 09:00."
+    );
+    assert!(
+        enforcer.blocking(),
+        "the Distraction List is blocked all day"
+    );
+}

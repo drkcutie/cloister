@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, Utc};
 
-use crate::format::{clock, Zone};
+use crate::format::{clock, day, Zone};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoticeKind {
@@ -41,7 +41,8 @@ impl Notice {
     }
 
     /// The notice for a rejection `code` from the service. `ends_at` is the end of the
-    /// Block the refusal is about, when there is one.
+    /// Block the refusal is about, when there is one (for Evening Lockdown and Rest Days: the
+    /// next Workday Start).
     pub fn refusal(code: &str, ends_at: Option<DateTime<Utc>>, zone: &Zone) -> Self {
         let ends = |then: &str| match ends_at {
             Some(t) => format!("Ends at {}. {then}", clock(t, zone)),
@@ -62,6 +63,25 @@ impl Notice {
             "invalid_entry" => "Enter a domain, like example.com, or an app name.".into(),
             "unknown_entry" => "That Blocklist doesn't hold this entry.".into(),
             "cannot_opt_out" => "The Work List can be edited, not switched off.".into(),
+            "evening_lockdown" => match ends_at {
+                Some(t) => format!(
+                    "Evening Lockdown. Deep Sessions start again at {}.",
+                    clock(t, zone)
+                ),
+                None => "Evening Lockdown. Deep Sessions start again at Workday Start.".into(),
+            },
+            "rest_day" => match ends_at {
+                Some(t) => format!(
+                    "A Rest Day. Deep Sessions start again {}, {}.",
+                    day(t, zone),
+                    clock(t, zone)
+                ),
+                None => "A Rest Day. Deep Sessions start again on a Workday.".into(),
+            },
+            "time_zone_cannot_change" => {
+                "The time zone is set once, with the first settings.".into()
+            }
+            "invalid_settings" => "Workday Start comes before Shutdown Time.".into(),
             _ => "Not accepted. Nothing has changed.".into(),
         })
     }

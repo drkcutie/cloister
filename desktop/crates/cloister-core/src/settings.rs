@@ -1,0 +1,279 @@
+//! Workdays, Workday Start and Shutdown Time, and the Evening Lockdown they define.
+//!
+//! Evening Lockdown runs on the clock alone: from Shutdown Time until the next Workday Start,
+//! and all day on a Rest Day (a day that isn't a Workday). During it the Work List is blocked
+//! as well as the Distraction List, and no Deep Session can start.
+//!
+//! Settings follow **tighten now, loosen tomorrow** (ADR 0001). A change is split per field:
+//! the stricter part (fewer Workdays, a later Workday Start, an earlier Shutdown Time) applies
+//! at once, and the requested settings as a whole wait in `pending_settings` until the next
+//! day boundary.
+
+use std::collections::BTreeSet;
+
+use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveTime, Utc};
+use chrono_tz::Tz;
+use serde::{Deserialize, Serialize};
+
+use crate::day_plan::{local, parse_hhmm};
+use crate::{next_day_boundary, Reason, State};
+
+/// The account's Workdays and Workday bounds. Times are local "HH:MM" in the state's
+/// `time_zone`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Settings {
+    /// ISO weekdays (1 = Monday ... 7 = Sunday), sorted. Every other day is a Rest Day.
+    pub workdays: Vec<u8>,
+    pub workday_start: String,
+    pub shutdown_time: String,
+}
+
+/// Requested settings that loosen something, in force from `effective_at`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PendingSettings {
+    pub workdays: Vec<u8>,
+    pub workday_start: String,
+    pub shutdown_time: String,
+    pub effective_at: DateTime<Utc>,
+}
+
+impl PendingSettings {
+    pub fn settings(&self) -> Settings {
+        Settings {
+            workdays: self.workdays.clone(),
+            workday_start: self.workday_start.clone(),
+            shutdown_time: self.shutdown_time.clone(),
+        }
+    }
+
+    fn new(settings: Settings, effective_at: DateTime<Utc>) -> Self {
+        PendingSettings {
+            workdays: settings.workdays,
+            workday_start: settings.workday_start,
+            shutdown_time: settings.shutdown_time,
+            effective_at,
+        }
+    }
+}
+
+impl Settings {
+    /// The stricter of two settings, field by field.
+    pub fn tightest(&self, other: &Settings) -> Settings {
+        Settings {
+            workdays: self
+                .workdays
+                .iter()
+                .filter(|d| other.workdays.contains(d))
+                .copied()
+                .collect(),
+            workday_start: self.workday_start.clone().max(other.workday_start.clone()),
+            shutdown_time: self.shutdown_time.clone().min(other.shutdown_time.clone()),
+        }
+    }
+
+    pub fn is_workday(&self, date: NaiveDate) -> bool {
+        self.workdays
+            .contains(&(date.weekday().number_from_monday() as u8))
+    }
+
+    fn times(&self) -> (NaiveTime, NaiveTime) {
+        // Validated on the way in; a broken value locks the whole day rather than freeing it.
+        (
+            parse_hhmm(&self.workday_start).unwrap_or(NaiveTime::MIN),
+            parse_hhmm(&self.shutdown_time).unwrap_or(NaiveTime::MIN),
+        )
+    }
+}
+
+/// Why the clock says no work now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Lockdown {
+    /// Between Shutdown Time and the next Workday Start on a Workday.
+    EveningLockdown,
+    /// A day that isn't a Workday.
+    RestDay,
+}
+
+impl Lockdown {
+    /// The rejection a Deep Session start gets now.
+    pub fn reason(self) -> Reason {
+        match self {
+            Lockdown::EveningLockdown => Reason::EveningLockdown,
+            Lockdown::RestDay => Reason::RestDay,
+        }
+    }
+}
+
+fn time_zone(state: &State) -> Tz {
+    state.time_zone.parse().unwrap_or(Tz::UTC)
+}
+
+/// The settings in force at `at`: the pending ones once their day has come.
+pub fn settings_at(state: &State, at: DateTime<Utc>) -> Option<Settings> {
+    match &state.pending_settings {
+        Some(p) if p.effective_at <= at => Some(p.settings()),
+        _ => state.settings.clone(),
+    }
+}
+
+/// Whether the clock locks work at `at`, and why. `None` before any settings exist.
+pub fn lockdown(state: &State, at: DateTime<Utc>) -> Option<Lockdown> {
+    let settings = settings_at(state, at)?;
+    let local = at.with_timezone(&time_zone(state));
+    if !settings.is_workday(local.date_naive()) {
+        return Some(Lockdown::RestDay);
+    }
+    let (start, shutdown) = settings.times();
+    let time = local.time();
+    (time < start || time >= shutdown).then_some(Lockdown::EveningLockdown)
+}
+
+/// The start of local `date` in the account's time zone.
+fn day_start(state: &State, date: NaiveDate) -> DateTime<Utc> {
+    local(time_zone(state), date, NaiveTime::MIN)
+        .unwrap_or_else(|| date.and_time(NaiveTime::MIN).and_utc())
+}
+
+/// What the settings say about local `date`, as seen at `now`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Workday {
+    /// No settings yet: a Day Plan brings its own bounds.
+    NotConfigured,
+    RestDay,
+    /// Workday Start to Shutdown Time.
+    Bounds(DateTime<Utc>, DateTime<Utc>),
+}
+
+/// The Workday bounds of `date` under the settings in force when that day begins (or now, for
+/// a day that has begun).
+pub fn workday(state: &State, date: NaiveDate, now: DateTime<Utc>) -> Workday {
+    let Some(settings) = settings_at(state, now.max(day_start(state, date))) else {
+        return Workday::NotConfigured;
+    };
+    if !settings.is_workday(date) {
+        return Workday::RestDay;
+    }
+    let tz = time_zone(state);
+    let (start, shutdown) = settings.times();
+    match (local(tz, date, start), local(tz, date, shutdown)) {
+        (Some(a), Some(b)) => Workday::Bounds(a, b),
+        _ => Workday::RestDay,
+    }
+}
+
+/// When work is next allowed after `now`: the next Workday Start that ends a lockdown.
+/// `None` without settings, or when no day in the coming two weeks is a Workday.
+pub fn next_workday_start(state: &State, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    let today = now.with_timezone(&time_zone(state)).date_naive();
+    (0..15)
+        .map(|n| today + Duration::days(n))
+        .filter_map(|date| match workday(state, date, now) {
+            Workday::Bounds(start, end) if start < end && start > now => Some(start),
+            _ => None,
+        })
+        .next()
+}
+
+/// Validate and normalize requested settings.
+fn checked(workdays: &[u8], workday_start: &str, shutdown_time: &str) -> Result<Settings, Reason> {
+    let days: BTreeSet<u8> = workdays.iter().copied().collect();
+    let (Some(start), Some(shutdown)) = (parse_hhmm(workday_start), parse_hhmm(shutdown_time))
+    else {
+        return Err(Reason::InvalidSettings);
+    };
+    if days.len() != workdays.len()
+        || days.iter().any(|d| !(1..=7).contains(d))
+        || shutdown <= start
+    {
+        return Err(Reason::InvalidSettings);
+    }
+    Ok(Settings {
+        workdays: days.into_iter().collect(),
+        workday_start: workday_start.to_string(),
+        shutdown_time: shutdown_time.to_string(),
+    })
+}
+
+pub(crate) fn change_settings(
+    next: &mut State,
+    workdays: &[u8],
+    workday_start: &str,
+    shutdown_time: &str,
+    time_zone: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<(), Reason> {
+    if let Some(tz) = time_zone {
+        tz.parse::<Tz>().map_err(|_| Reason::UnknownTimeZone)?;
+    }
+    let requested = checked(workdays, workday_start, shutdown_time)?;
+    let configured = next.settings.is_some() || next.pending_settings.is_some();
+    if let Some(tz) = time_zone {
+        if tz != next.time_zone {
+            if configured {
+                return Err(Reason::TimeZoneCannotChange);
+            }
+            next.time_zone = tz.to_string();
+        }
+    }
+    let Some(base) = settings_at(next, now) else {
+        next.settings = Some(requested);
+        next.pending_settings = None;
+        return Ok(());
+    };
+    let in_force = base.tightest(&requested);
+    next.pending_settings = (in_force != requested)
+        .then(|| PendingSettings::new(requested, next_day_boundary(next, now)));
+    next.settings = Some(in_force);
+    Ok(())
+}
+
+impl State {
+    /// Fold in settings from the backend at `now` so that nothing loosens sooner than tomorrow
+    /// from here. The time zone is taken only with the first settings.
+    pub fn merge_settings(
+        &mut self,
+        time_zone: &str,
+        settings: Option<&Settings>,
+        pending: Option<&PendingSettings>,
+        now: DateTime<Utc>,
+    ) {
+        let incoming = State {
+            time_zone: time_zone.to_string(),
+            settings: settings.cloned(),
+            pending_settings: pending.cloned(),
+            ..State::default()
+        };
+        let Some(incoming_now) = settings_at(&incoming, now) else {
+            return; // The backend never drops settings; keep ours.
+        };
+        let target = match pending {
+            Some(p) if p.effective_at > now => p.settings(),
+            _ => incoming_now.clone(),
+        };
+        let Some(base) = settings_at(self, now) else {
+            if time_zone.parse::<Tz>().is_ok() {
+                self.time_zone = time_zone.to_string();
+            }
+            self.settings = Some(incoming_now);
+            self.pending_settings = pending.filter(|p| p.effective_at > now).cloned();
+            return;
+        };
+        let in_force = base.tightest(&incoming_now);
+        let boundary = next_day_boundary(self, now);
+        self.pending_settings = (in_force != target).then(|| {
+            let effective_at = match &self.pending_settings {
+                Some(known) if known.settings() == target && known.effective_at > now => {
+                    known.effective_at
+                }
+                _ => pending
+                    .filter(|p| p.effective_at > now)
+                    .map_or(boundary, |p| p.effective_at.max(boundary)),
+            };
+            PendingSettings::new(target, effective_at)
+        });
+        self.settings = Some(in_force);
+    }
+}

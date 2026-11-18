@@ -6,7 +6,8 @@
 //! ```
 //!
 //! `--dry-run` logs each Enforcement instead of touching the system, so the service, its
-//! DNS filter (on a high `--dns` port) and IPC can be run without root.
+//! DNS filter (on a high `--dns` port) and IPC can be run without root. Without `--dry-run`
+//! it refuses to start unless it is root: a half-applied enforcement is worse than none.
 
 use std::io;
 use std::net::SocketAddr;
@@ -83,6 +84,11 @@ fn parse_run(args: &[String]) -> Result<Options, String> {
 }
 
 fn run(o: Options) -> Result<(), String> {
+    // Before anything touches the system: real enforcement only as root.
+    cloister_enforcer::privileges::may_enforce(
+        o.dry_run,
+        cloister_enforcer::privileges::effective_uid(),
+    )?;
     let platform: Box<dyn Platform> = if o.dry_run {
         Box::new(LogPlatform::default())
     } else {

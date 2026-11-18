@@ -203,6 +203,27 @@ fn sign_in_with_state(tx: &mut Transaction, scenario: &str, initial_state: &Valu
         )
         .unwrap();
     }
+    if let Some(settings) = &state.settings {
+        let days = |d: &[u8]| d.iter().map(|&d| i16::from(d)).collect::<Vec<i16>>();
+        let pending = state.pending_settings.as_ref();
+        tx.execute(
+            "insert into public.settings
+               (user_id, workdays, workday_start, shutdown_time, pending_workdays,
+                pending_workday_start, pending_shutdown_time, pending_effective_at)
+             values ($1::text::uuid, $2, $3, $4, $5, $6, $7, $8::text::timestamptz)",
+            &[
+                &user_id,
+                &days(&settings.workdays),
+                &settings.workday_start,
+                &settings.shutdown_time,
+                &pending.map(|p| days(&p.workdays)),
+                &pending.map(|p| p.workday_start.clone()),
+                &pending.map(|p| p.shutdown_time.clone()),
+                &pending.map(|p| p.effective_at.to_rfc3339()),
+            ],
+        )
+        .unwrap();
+    }
     tx.batch_execute("set local session_replication_role = origin")
         .unwrap();
     let claims = json!({ "sub": user_id, "role": "authenticated" }).to_string();

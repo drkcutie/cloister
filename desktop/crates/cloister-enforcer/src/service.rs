@@ -6,13 +6,13 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use cloister_core::{
-    decide, enforcement, Block, BlocklistEdits, Command, Enforcement, Outcome, State, MAX_BLOCK,
-    QUIT_SOCIAL_BLOCK,
+    decide, enforcement, lockdown, next_workday_start, settings_at, Block, BlocklistEdits, Command,
+    Enforcement, Outcome, State, MAX_BLOCK, QUIT_SOCIAL_BLOCK,
 };
 
 use crate::dns::SharedDomains;
 use crate::domains::DomainSet;
-use crate::ipc::{Request, Response};
+use crate::ipc::{Planning, Request, Response};
 use crate::store::StateStore;
 
 /// The privileged layer: make the operating system enforce `enforcement`. Called on every
@@ -67,7 +67,10 @@ impl<P: Platform, C: Clock> Service<P, C> {
         Ok(service)
     }
 
-    /// Re-apply the Enforcement for now. Returns it.
+    /// Re-apply the Enforcement for now, computed by the rules engine from the service's own
+    /// persisted state (Blocks, Blocklist edits, settings, Day Plans and Schedules), so
+    /// Evening Lockdown and planned Deep Sessions hold with no app or Device sync running.
+    /// Returns it.
     pub fn tick(&mut self) -> Enforcement {
         let current = enforcement(&self.state, self.clock.now());
         let set = DomainSet::new(&current.blocked_domains);
@@ -83,19 +86,34 @@ impl<P: Platform, C: Clock> Service<P, C> {
 
     pub fn handle(&mut self, request: Request) -> Response {
         match request {
-            Request::Status => Response::Status {
-                server_time: self.clock.now(),
-                blocks: self.state.blocks.clone(),
-                enforcement: enforcement(&self.state, self.clock.now()),
-                blocklists: self.state.blocklist_edits(),
-            },
+            Request::Status => {
+                let now = self.clock.now();
+                Response::Status {
+                    server_time: now,
+                    blocks: self.state.blocks.clone(),
+                    enforcement: enforcement(&self.state, now),
+                    blocklists: self.state.blocklist_edits(),
+                    lockdown: lockdown(&self.state, now),
+                    next_workday_start: next_workday_start(&self.state, now),
+                    settings: settings_at(&self.state, now),
+                }
+            }
             Request::Command { command } => self.command(command),
-            Request::Sync { blocks, blocklists } => self.sync(blocks, blocklists),
+            Request::Sync {
+                blocks,
+                blocklists,
+                planning,
+            } => self.sync(blocks, blocklists, planning),
         }
     }
 
     /// Fold in Blocks from the backend. Only tightens (see [`merge_blocks`]).
-    fn sync(&mut self, blocks: Vec<Block>, blocklists: Option<BlocklistEdits>) -> Response {
+    fn sync(
+        &mut self,
+        blocks: Vec<Block>,
+        blocklists: Option<BlocklistEdits>,
+        planning: Option<Planning>,
+    ) -> Response {
         let Some(mut merged) = merge_blocks(&self.state, &blocks) else {
             return Response::Rejected {
                 reason: INVALID_BLOCK.into(),
@@ -103,6 +121,9 @@ impl<P: Platform, C: Clock> Service<P, C> {
         };
         if let Some(edits) = blocklists {
             merged.merge_blocklist_edits(&edits, self.clock.now());
+        }
+        if let Some(planning) = planning {
+            merge_planning(&mut merged, &planning, self.clock.now());
         }
         if merged != self.state {
             if let Err(e) = self.store.save(&merged) {
@@ -161,7 +182,10 @@ fn tightens(command: &Command) -> bool {
         | Command::RemoveBlocklistEntry { .. }
         | Command::OptOutOfBlocklist { .. } => false,
         // Moving a deep Slot or changing a Schedule can loosen today: the backend decides.
-        Command::WriteDayPlan { .. } | Command::PutSchedule { .. } => false,
+        // Settings can loosen tomorrow; the backend decides and the Sync hands them over.
+        Command::WriteDayPlan { .. }
+        | Command::PutSchedule { .. }
+        | Command::ChangeSettings { .. } => false,
     }
 }
 
@@ -194,6 +218,39 @@ pub fn merge_blocks(state: &State, incoming: &[Block]) -> Option<State> {
         }
     }
     Some(next)
+}
+
+/// Fold the account's planning into `state` at `now` without loosening anything before
+/// tomorrow: settings tighten now and loosen from the next day boundary, a Schedule change goes
+/// through the rules engine (a running day keeps its plan), and a Day Plan is taken only if it
+/// keeps every started Deep Session and doesn't reduce the deep time still to come.
+pub fn merge_planning(state: &mut State, planning: &Planning, now: DateTime<Utc>) {
+    state.merge_settings(
+        &planning.time_zone,
+        planning.settings.as_ref(),
+        planning.pending_settings.as_ref(),
+        now,
+    );
+    for schedule in &planning.schedules {
+        if state.schedules.contains(schedule) {
+            continue;
+        }
+        let command = Command::PutSchedule {
+            schedule_id: schedule.id.clone(),
+            time_zone: schedule.time_zone.clone(),
+            weekdays: schedule.weekdays.clone(),
+            starts: schedule.starts.clone(),
+            ends: schedule.ends.clone(),
+            slots: schedule.slots.clone(),
+        };
+        let decision = decide(state, &command, now);
+        if decision.outcome == Outcome::Accepted {
+            *state = decision.state;
+        }
+    }
+    for plan in &planning.day_plans {
+        state.merge_day_plan(plan, now);
+    }
 }
 
 /// A shared, empty domain set to hand to [`Service::open`] and the DNS filter.

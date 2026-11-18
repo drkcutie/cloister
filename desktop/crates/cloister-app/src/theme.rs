@@ -55,9 +55,7 @@ impl Palette {
         }
     }
 
-    /// Not switched to yet: the app settles into Night at Shutdown Time once the rules
-    /// engine knows about Shutdown Time and Evening Lockdown.
-    #[allow(dead_code)]
+    /// Evening Lockdown and Rest Days. The app settles into it at Shutdown Time.
     pub fn night() -> Self {
         Palette {
             ground: hex(0x0E1716),
@@ -72,6 +70,37 @@ impl Palette {
             brass_tint: hex(0x2B3B39),
             brass_on_deep: hex(0xC9A968),
             on_deep: hex(0xE4EAE7),
+        }
+    }
+}
+
+impl Palette {
+    /// `from` blended toward `to` by `t` (0 to 1), colour by colour.
+    pub fn mix(from: &Palette, to: &Palette, t: f32) -> Palette {
+        let t = t.clamp(0.0, 1.0);
+        let lerp = |a: Hsla, b: Hsla| -> Hsla {
+            let (a, b) = (a.to_rgb(), b.to_rgb());
+            Rgba {
+                r: a.r + (b.r - a.r) * t,
+                g: a.g + (b.g - a.g) * t,
+                b: a.b + (b.b - a.b) * t,
+                a: a.a + (b.a - a.a) * t,
+            }
+            .into()
+        };
+        Palette {
+            ground: lerp(from.ground, to.ground),
+            surface: lerp(from.surface, to.surface),
+            sunk: lerp(from.sunk, to.sunk),
+            line: lerp(from.line, to.line),
+            ink: lerp(from.ink, to.ink),
+            ink_2: lerp(from.ink_2, to.ink_2),
+            ink_3: lerp(from.ink_3, to.ink_3),
+            accent: lerp(from.accent, to.accent),
+            brass: lerp(from.brass, to.brass),
+            brass_tint: lerp(from.brass_tint, to.brass_tint),
+            brass_on_deep: lerp(from.brass_on_deep, to.brass_on_deep),
+            on_deep: lerp(from.on_deep, to.on_deep),
         }
     }
 }
@@ -133,8 +162,7 @@ pub mod motion {
     /// Hold to commit, linear. Mirrors `cloister_app_model::Hold::DURATION`, which drives it.
     #[allow(dead_code)]
     pub const SINK: Duration = Duration::from_millis(2000);
-    /// Day to Night, ease-out.
-    #[allow(dead_code)]
+    /// Day to Night (and back at Workday Start), ease-out.
     pub const SETTLE: Duration = Duration::from_millis(600);
 }
 
@@ -203,7 +231,11 @@ pub fn load_fonts(cx: &mut App) {
 
 /// Install the Day palette and align gpui-kit's own theme (used by the text input) with it.
 pub fn install(cx: &mut App) {
-    let palette = Palette::day();
+    use_palette(cx, Palette::day());
+}
+
+/// Make `palette` the one every screen draws with, and redraw.
+pub fn use_palette(cx: &mut App, palette: Palette) {
     cx.set_global(palette);
     let kit = KitTheme::global_mut(cx);
     kit.font_family = SANS.into();
@@ -220,6 +252,31 @@ pub fn install(cx: &mut App) {
     kit.ring = depth(3);
     kit.caret = palette.ink;
     kit.selection = depth(1);
+    cx.refresh_windows();
+}
+
+/// Settle from the palette now showing into Day or Night over [`motion::SETTLE`], ease-out.
+/// Hold the returned task: dropping it stops the settle where it is.
+pub fn settle(cx: &mut App, night: bool) -> Task<()> {
+    let from = cx.palette();
+    let to = if night {
+        Palette::night()
+    } else {
+        Palette::day()
+    };
+    let start = std::time::Instant::now();
+    let ease = ease_out_quint();
+    cx.spawn(async move |cx| loop {
+        let t = (start.elapsed().as_secs_f32() / motion::SETTLE.as_secs_f32()).min(1.0);
+        let palette = Palette::mix(&from, &to, ease(t));
+        cx.update(|cx| use_palette(cx, palette));
+        if t >= 1.0 {
+            break;
+        }
+        cx.background_executor()
+            .timer(Duration::from_millis(16))
+            .await;
+    })
 }
 
 pub trait PaletteExt {

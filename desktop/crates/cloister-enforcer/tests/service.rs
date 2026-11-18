@@ -6,9 +6,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, Utc};
-use cloister_core::{BlocklistEdits, BlocklistRemoval, Command, Enforcement, EntryKind};
+use cloister_core::{
+    BlocklistEdits, BlocklistRemoval, Command, DayPlan, Enforcement, EntryKind, Lockdown, Settings,
+    Slot,
+};
 use cloister_enforcer::dns::SharedDomains;
-use cloister_enforcer::ipc::{self, Request, Response};
+use cloister_enforcer::ipc::{self, Planning, Request, Response};
 use cloister_enforcer::service::shared_domains;
 use cloister_enforcer::store::StateStore;
 use cloister_enforcer::{Clock, Platform, Service};
@@ -275,6 +278,7 @@ fn sync(r: &Running, blocks: Vec<cloister_core::Block>) -> Response {
         &Request::Sync {
             blocks,
             blocklists: None,
+            planning: None,
         },
     )
     .unwrap()
@@ -400,6 +404,7 @@ fn a_synced_removal_never_takes_effect_before_tomorrow_here() {
                 removals: vec![reddit_removal("2026-01-05T22:00:00Z")],
                 ..BlocklistEdits::default()
             }),
+            planning: None,
         },
     )
     .unwrap();
@@ -426,4 +431,247 @@ fn a_synced_quit_social_block_is_kept_for_its_30_days() {
     r.service.lock().unwrap().tick();
     assert!(blocks(&r, "x.com"));
     assert!(!blocks(&r, "youtube.com"));
+}
+
+// Planning: settings, Day Plans and Schedules held by the service itself -------------------
+
+fn weekdays_9_to_5() -> Settings {
+    Settings {
+        workdays: vec![1, 2, 3, 4, 5],
+        workday_start: "09:00".into(),
+        shutdown_time: "17:00".into(),
+    }
+}
+
+fn sync_planning(r: &Running, planning: Planning) -> Response {
+    ipc::send(
+        &r.socket,
+        &Request::Sync {
+            blocks: vec![],
+            blocklists: None,
+            planning: Some(planning),
+        },
+    )
+    .unwrap()
+}
+
+fn utc(s: &str) -> DateTime<Utc> {
+    s.parse().unwrap()
+}
+
+fn plan(date: &str, slots: Vec<Slot>) -> DayPlan {
+    let minutes = slots
+        .iter()
+        .filter(|s| s.deep)
+        .map(|s| (s.ends_at - s.starts_at).num_minutes())
+        .sum();
+    DayPlan {
+        date: date.parse().unwrap(),
+        starts_at: utc(&format!("{date}T09:00:00Z")),
+        ends_at: utc(&format!("{date}T17:00:00Z")),
+        planned_deep_minutes: minutes,
+        slots,
+    }
+}
+
+fn deep_slot(id: &str, starts: &str, ends: &str) -> Slot {
+    Slot {
+        id: id.into(),
+        starts_at: utc(starts),
+        ends_at: utc(ends),
+        label: "Draft chapter 3".into(),
+        deep: true,
+        depth_rating: None,
+    }
+}
+
+#[test]
+fn evening_lockdown_is_enforced_on_the_clock_by_the_service_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T16:00:00Z");
+    let r = start(&dir, &clock);
+    let answer = sync_planning(
+        &r,
+        Planning {
+            settings: Some(weekdays_9_to_5()),
+            ..Planning::default()
+        },
+    );
+    assert!(matches!(answer, Response::Accepted { .. }), "{answer:?}");
+    assert!(!blocks(&r, "github.com"));
+    drop(r);
+
+    // Restarted, with nobody syncing any more: the clock alone starts Evening Lockdown.
+    clock.advance(Duration::hours(1));
+    let r = start(&dir, &clock);
+    assert!(blocks(&r, "github.com") && blocks(&r, "youtube.com"));
+    let Response::Status {
+        lockdown,
+        next_workday_start,
+        ..
+    } = ipc::send(&r.socket, &Request::Status).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(lockdown, Some(Lockdown::EveningLockdown));
+    assert_eq!(next_workday_start, Some(utc("2026-01-06T09:00:00Z")));
+    clock.advance(Duration::hours(16));
+    r.service.lock().unwrap().tick();
+    assert!(!blocks(&r, "github.com"), "Workday Start ends it");
+}
+
+#[test]
+fn a_planned_deep_session_starts_on_time_with_only_the_service_running() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T08:00:00Z");
+    let r = start(&dir, &clock);
+    sync_planning(
+        &r,
+        Planning {
+            day_plans: vec![plan(
+                "2026-01-05",
+                vec![deep_slot(
+                    "s1",
+                    "2026-01-05T10:00:00Z",
+                    "2026-01-05T11:00:00Z",
+                )],
+            )],
+            ..Planning::default()
+        },
+    );
+    assert!(!blocks(&r, "youtube.com"));
+    clock.advance(Duration::hours(2));
+    r.service.lock().unwrap().tick();
+    assert!(blocks(&r, "youtube.com"));
+    clock.advance(Duration::hours(1));
+    r.service.lock().unwrap().tick();
+    assert!(!blocks(&r, "youtube.com"));
+}
+
+#[test]
+fn a_synced_loosening_of_settings_waits_until_tomorrow() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T17:30:00Z");
+    let r = start(&dir, &clock);
+    sync_planning(
+        &r,
+        Planning {
+            settings: Some(weekdays_9_to_5()),
+            ..Planning::default()
+        },
+    );
+    assert!(blocks(&r, "github.com"));
+    // A tampered sync claims Shutdown Time is 22:00 with nothing pending.
+    let mut later = weekdays_9_to_5();
+    later.shutdown_time = "22:00".into();
+    sync_planning(
+        &r,
+        Planning {
+            settings: Some(later.clone()),
+            ..Planning::default()
+        },
+    );
+    assert!(blocks(&r, "github.com"), "tonight's lockdown stands");
+    // Tomorrow the later Shutdown Time applies.
+    clock.advance(Duration::hours(24) + Duration::hours(2));
+    r.service.lock().unwrap().tick();
+    assert!(!blocks(&r, "github.com"));
+    // Tightening applies at once.
+    let mut earlier = later;
+    earlier.shutdown_time = "18:00".into();
+    sync_planning(
+        &r,
+        Planning {
+            settings: Some(earlier),
+            ..Planning::default()
+        },
+    );
+    assert!(blocks(&r, "github.com"));
+}
+
+#[test]
+fn a_synced_day_plan_can_move_deep_slots_but_not_drop_or_backdate_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T10:30:00Z");
+    let r = start(&dir, &clock);
+    let running = deep_slot("s1", "2026-01-05T10:00:00Z", "2026-01-05T11:00:00Z");
+    let later = deep_slot("s2", "2026-01-05T14:00:00Z", "2026-01-05T15:00:00Z");
+    sync_planning(
+        &r,
+        Planning {
+            day_plans: vec![plan("2026-01-05", vec![running.clone(), later.clone()])],
+            ..Planning::default()
+        },
+    );
+    assert!(blocks(&r, "youtube.com"));
+    // Dropping the running Deep Session is refused; the old plan stays.
+    sync_planning(
+        &r,
+        Planning {
+            day_plans: vec![plan(
+                "2026-01-05",
+                vec![
+                    later.clone(),
+                    deep_slot("s3", "2026-01-05T15:00:00Z", "2026-01-05T16:00:00Z"),
+                ],
+            )],
+            ..Planning::default()
+        },
+    );
+    assert!(blocks(&r, "youtube.com"));
+    // Moving the later Slot into the past would free the afternoon: refused.
+    sync_planning(
+        &r,
+        Planning {
+            day_plans: vec![plan(
+                "2026-01-05",
+                vec![
+                    deep_slot("s2", "2026-01-05T08:00:00Z", "2026-01-05T09:00:00Z"),
+                    running.clone(),
+                ],
+            )],
+            ..Planning::default()
+        },
+    );
+    clock.advance(Duration::hours(4));
+    r.service.lock().unwrap().tick();
+    assert!(blocks(&r, "youtube.com"), "14:00 Deep Session kept");
+    // Moving it to another future time is fine.
+    sync_planning(
+        &r,
+        Planning {
+            day_plans: vec![plan(
+                "2026-01-05",
+                vec![
+                    running,
+                    later,
+                    deep_slot("s4", "2026-01-05T16:00:00Z", "2026-01-05T17:00:00Z"),
+                ],
+            )],
+            ..Planning::default()
+        },
+    );
+    clock.advance(Duration::hours(2));
+    r.service.lock().unwrap().tick();
+    assert!(blocks(&r, "youtube.com"), "16:00 added");
+}
+
+#[test]
+fn a_deep_session_cannot_start_in_evening_lockdown_over_ipc() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T18:00:00Z");
+    let r = start(&dir, &clock);
+    sync_planning(
+        &r,
+        Planning {
+            settings: Some(weekdays_9_to_5()),
+            ..Planning::default()
+        },
+    );
+    assert_eq!(
+        send(&r, start_block(60)),
+        Response::Rejected {
+            reason: "evening_lockdown".into()
+        }
+    );
 }

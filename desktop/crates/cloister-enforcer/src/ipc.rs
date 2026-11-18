@@ -11,7 +11,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use chrono::{DateTime, Utc};
-use cloister_core::{Block, BlocklistEdits, Command, Enforcement};
+use cloister_core::{
+    Block, BlocklistEdits, Command, DayPlan, Enforcement, Lockdown, PendingSettings, Schedule,
+    Settings, State,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::service::{Clock, Platform, Service};
@@ -31,6 +34,12 @@ pub enum Request {
         /// (see [`cloister_core::State::merge_blocklist_edits`]).
         #[serde(default)]
         blocklists: Option<BlocklistEdits>,
+        /// The account's settings, Day Plans and Schedules, when the sender knows them, so the
+        /// service enforces Evening Lockdown and planned Deep Sessions on its own. Merged so
+        /// nothing loosens before tomorrow (see [`cloister_core::State::merge_settings`] and
+        /// [`cloister_core::State::merge_day_plan`]).
+        #[serde(default)]
+        planning: Option<Planning>,
     },
     Status,
 }
@@ -51,7 +60,50 @@ pub enum Response {
         /// The Blocklist edits the service enforces.
         #[serde(default)]
         blocklists: BlocklistEdits,
+        /// Whether the clock locks work now (Evening Lockdown or a Rest Day).
+        #[serde(default)]
+        lockdown: Option<Lockdown>,
+        /// When work is next allowed, if settings exist.
+        #[serde(default)]
+        next_workday_start: Option<DateTime<Utc>>,
+        /// The settings in force now.
+        #[serde(default)]
+        settings: Option<Settings>,
     },
+}
+
+/// The planning part of the account's state, as handed to the service.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Planning {
+    /// IANA; taken only with the first settings.
+    #[serde(default = "utc")]
+    pub time_zone: String,
+    #[serde(default)]
+    pub settings: Option<Settings>,
+    #[serde(default)]
+    pub pending_settings: Option<PendingSettings>,
+    #[serde(default)]
+    pub day_plans: Vec<DayPlan>,
+    #[serde(default)]
+    pub schedules: Vec<Schedule>,
+}
+
+fn utc() -> String {
+    cloister_core::DEFAULT_TIME_ZONE.to_string()
+}
+
+impl Planning {
+    /// The planning part of `state`.
+    pub fn of(state: &State) -> Self {
+        Planning {
+            time_zone: state.time_zone.clone(),
+            settings: state.settings.clone(),
+            pending_settings: state.pending_settings.clone(),
+            day_plans: state.day_plans.clone(),
+            schedules: state.schedules.clone(),
+        }
+    }
 }
 
 /// Serve `service` on a Unix socket at `path` on a background thread.

@@ -215,3 +215,30 @@ fn a_blocklist_addition_on_one_device_applies_on_another_at_once_but_a_removal_w
     assert!(blocks(&a, "github.com"));
     sync.stop();
 }
+
+#[test]
+#[ignore = "needs a local Supabase; run backend/scripts/test.sh"]
+fn settings_changed_on_one_device_lock_down_another() {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = two_devices(dir.path(), "settings");
+    let sync = b.start_sync(realtime_only());
+    wait_until("B online", || b.sync_status() == SyncStatus::Online);
+    assert!(!blocks(&b, "github.com"));
+    // No Workdays at all: every day is a Rest Day, whatever the time now.
+    let rest_every_day = Command::ChangeSettings {
+        workdays: vec![],
+        workday_start: "09:00".into(),
+        shutdown_time: "17:00".into(),
+        time_zone: Some("Europe/Paris".into()),
+    };
+    assert_eq!(a.send(&rest_every_day).unwrap(), CommandOutcome::Accepted);
+    wait_until("B locks down", || blocks(&b, "github.com"));
+    assert_eq!(b.state().unwrap().time_zone, "Europe/Paris");
+    assert_eq!(
+        a.send(&start_block(30, &[])).unwrap(),
+        CommandOutcome::Rejected {
+            reason: "rest_day".into()
+        }
+    );
+    sync.stop();
+}

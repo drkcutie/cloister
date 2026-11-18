@@ -17,7 +17,8 @@ use serde::{Deserialize, Serialize};
 use crate::{Block, Catalog, Reason, State};
 
 /// One day divided into Slots. `starts_at`/`ends_at` are the Workday's bounds (Workday Start
-/// to Shutdown Time); until those settings exist (ticket #8) they come with the plan.
+/// to Shutdown Time). Once settings exist they must match them; before that they come with
+/// the plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DayPlan {
@@ -172,7 +173,7 @@ fn schedule_plan_of(schedule: &Schedule, date: NaiveDate) -> Option<DayPlan> {
 
 /// Local wall time to UTC. An ambiguous time takes the earlier instant; a time skipped by a
 /// clock change moves an hour later.
-fn local(tz: Tz, date: NaiveDate, time: NaiveTime) -> Option<DateTime<Utc>> {
+pub(crate) fn local(tz: Tz, date: NaiveDate, time: NaiveTime) -> Option<DateTime<Utc>> {
     let naive = date.and_time(time);
     tz.from_local_datetime(&naive)
         .earliest()
@@ -184,7 +185,7 @@ fn local(tz: Tz, date: NaiveDate, time: NaiveTime) -> Option<DateTime<Utc>> {
 }
 
 /// Strict "HH:MM", 00:00 to 23:59.
-fn parse_hhmm(s: &str) -> Option<NaiveTime> {
+pub(crate) fn parse_hhmm(s: &str) -> Option<NaiveTime> {
     let b = s.as_bytes();
     if b.len() != 5
         || b[2] != b':'
@@ -253,6 +254,16 @@ pub(crate) fn write_day_plan(
     input: &[SlotInput],
     now: DateTime<Utc>,
 ) -> Result<(), Reason> {
+    // With settings, the plan runs from that day's Workday Start to its Shutdown Time.
+    match crate::workday(state, date, now) {
+        crate::Workday::NotConfigured => {}
+        crate::Workday::RestDay => return Err(Reason::RestDay),
+        crate::Workday::Bounds(start, end) => {
+            if (starts_at, ends_at) != (start, end) {
+                return Err(Reason::InvalidDayPlan);
+            }
+        }
+    }
     if ends_at <= starts_at || ends_at - starts_at > MAX_DAY {
         return Err(Reason::InvalidDayPlan);
     }
@@ -416,6 +427,64 @@ pub(crate) fn put_schedule(
         }
     }
     Ok(())
+}
+
+/// Deep minutes of `slots` still to come after `now` (a running Slot counts its remainder).
+fn deep_minutes_after(slots: &[Slot], now: DateTime<Utc>) -> i64 {
+    slots
+        .iter()
+        .filter(|s| s.deep && s.ends_at > now)
+        .map(|s| (s.ends_at - s.starts_at.max(now)).num_seconds())
+        .sum::<i64>()
+        / 60
+}
+
+impl State {
+    /// Fold in a Day Plan from the backend at `now`, as an enforcement service that only
+    /// tightens must: the plan is taken only if every deep Slot that has started is kept
+    /// unchanged, Planned Deep Minutes don't go down and the deep time still to come doesn't
+    /// shrink (so no deep Slot is moved into the past). Known Depth Ratings stay. Returns
+    /// whether the plan was taken.
+    pub fn merge_day_plan(&mut self, incoming: &DayPlan, now: DateTime<Utc>) -> bool {
+        let mut plan = incoming.clone();
+        plan.slots
+            .sort_by(|a, b| (a.starts_at, &a.id).cmp(&(b.starts_at, &b.id)));
+        plan.planned_deep_minutes = planned_deep_minutes(&plan.slots);
+        if let Some(old) = plan_in_force(self, plan.date, now) {
+            let kept = |o: &Slot| {
+                plan.slots.iter().any(|s| {
+                    s.id == o.id && s.starts_at == o.starts_at && s.ends_at == o.ends_at && s.deep
+                })
+            };
+            if old
+                .slots
+                .iter()
+                .any(|o| o.deep && o.starts_at <= now && !kept(o))
+                || plan.planned_deep_minutes < old.planned_deep_minutes
+                || deep_minutes_after(&plan.slots, now) < deep_minutes_after(&old.slots, now)
+            {
+                return false;
+            }
+            for slot in &mut plan.slots {
+                if slot.depth_rating.is_none() {
+                    slot.depth_rating = old
+                        .slots
+                        .iter()
+                        .find(|o| o.id == slot.id)
+                        .and_then(|o| o.depth_rating);
+                }
+            }
+        }
+        match self.day_plans.iter_mut().find(|p| p.date == plan.date) {
+            Some(saved) if *saved == plan => return false,
+            Some(saved) => *saved = plan,
+            None => {
+                self.day_plans.push(plan);
+                self.day_plans.sort_by_key(|p| p.date);
+            }
+        }
+        true
+    }
 }
 
 /// A deep Slot of a saved Day Plan, by id (for its Depth Rating).

@@ -26,4 +26,4 @@ pub use enforcer::{Enforcer, SocketEnforcer};
 pub use format::Zone;
 pub use hold::Hold;
 pub use notice::{Notice, NoticeKind};
-pub use today::{ActiveSession, RatingPrompt, Summary, Today, View};
+pub use today::{ActiveSession, RatingPrompt, Summary, Today, View, WorkdayEnded};

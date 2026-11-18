@@ -12,6 +12,7 @@ pub mod ipc;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod pf;
+pub mod privileges;
 pub mod service;
 pub mod store;
 

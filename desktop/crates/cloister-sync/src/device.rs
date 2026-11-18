@@ -238,8 +238,8 @@ impl Device {
         ))?;
         let blocks: Vec<Block> =
             serde_json::from_value(rows).map_err(|e| Error::Protocol(e.to_string()))?;
-        // The account's state in the engine's form: Blocklist edits, time zone, Day Plans
-        // and Schedules (absent keys mean none).
+        // The account's state in the engine's form: Blocklist edits, time zone, settings, Day
+        // Plans and Schedules (absent keys mean none).
         let state = self.online(backend.rest_post(&session, "rpc/state", json!({}), None))?;
         let state: State =
             serde_json::from_value(state).map_err(|e| Error::Protocol(e.to_string()))?;
@@ -249,13 +249,19 @@ impl Device {
             let offset = (server_now - Utc::now()).num_milliseconds();
             mirror.set(OFFSET_KEY, &offset.to_string())?;
             let blocks_changed = mirror.merge_blocks(&blocks)?;
+            let settings_changed = mirror.merge_settings(
+                &state.time_zone,
+                state.settings.as_ref(),
+                state.pending_settings.as_ref(),
+                server_now,
+            )?;
             let edits_changed = mirror.merge_blocklist_edits(
                 &state.time_zone,
                 &state.blocklist_edits(),
                 server_now,
             )?;
             let plans_changed = mirror.replace_day_plans(&state.day_plans, &state.schedules)?;
-            blocks_changed || edits_changed || plans_changed
+            blocks_changed || settings_changed || edits_changed || plans_changed
         };
         if changed {
             self.emit(SyncEvent::StateChanged);

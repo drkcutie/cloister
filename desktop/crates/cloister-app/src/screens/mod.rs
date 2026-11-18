@@ -9,6 +9,7 @@ mod begin;
 mod blocklists;
 mod day_plan;
 mod devices;
+mod ended;
 mod rating;
 mod session;
 mod sidebar;
@@ -132,6 +133,27 @@ impl MainView {
         self.cloister.update(cx, |c, cx| c.dismiss_notice(cx));
     }
 
+    /// The Day Plan screen on the next Workday: today before Workday Start, else tomorrow.
+    fn show_next_day_plan(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show(Screen::DayPlan, window, cx);
+        let next = self
+            .cloister
+            .read(cx)
+            .view()
+            .ended
+            .and_then(|e| e.next_workday_start);
+        let today = chrono::Local::now().date_naive();
+        let day = match next {
+            Some(t) if t.with_timezone(&chrono::Local).date_naive() == today => {
+                day_plan::Day::Today
+            }
+            _ => day_plan::Day::Tomorrow,
+        };
+        if let Some(plan) = &self.day_plan {
+            plan.update(cx, |plan, cx| plan.show(day, cx));
+        }
+    }
+
     /// Add what is typed in the Blocklists screen's field to the chosen Blocklist.
     fn add_entry(&mut self, kind: EntryKind, window: &mut Window, cx: &mut Context<Self>) {
         let input = self.entry.read(cx).value().to_string();
@@ -207,6 +229,12 @@ impl Render for MainView {
             .text_color(p.ink)
             .font_family(SANS);
         match (self.screen, view.active.clone()) {
+            // The workday has ended: Night, and nothing to begin. A Block still running (a plain
+            // one, or a Deep Session that began before Shutdown Time) stays the hero until it ends.
+            (Screen::Today, None) if view.ended.is_some() && view.rating.is_none() => {
+                let ended = view.ended.clone().expect("checked");
+                root.child(ui::fade_in("ended", ended::render(self, &view, &ended, cx)))
+            }
             (Screen::Today, Some(active)) => root.child(ui::fade_in(
                 SharedString::from(format!("session-{}", active.block_id)),
                 session::render(self, &active, &view, window, cx),
