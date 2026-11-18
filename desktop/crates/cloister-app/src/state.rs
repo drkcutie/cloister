@@ -282,13 +282,7 @@ impl Cloister {
     }
 }
 
-/// A macOS notification (warnings reach you even with the window closed).
+/// A system notification on any desktop (warnings reach you even with the window closed).
 fn notify(text: &str) {
-    let script = format!(
-        "display notification \"{}\" with title \"Cloister\"",
-        text.replace('\\', "").replace('"', "'")
-    );
-    let _ = std::process::Command::new("/usr/bin/osascript")
-        .args(["-e", &script])
-        .spawn();
+    cloister_app_model::notify::notify(text);
 }

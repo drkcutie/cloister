@@ -13,6 +13,7 @@ mod enforcer;
 pub mod format;
 mod hold;
 mod notice;
+pub mod notify;
 mod onboarding;
 mod ritual;
 mod scoreboard;
