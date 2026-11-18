@@ -75,7 +75,9 @@ pub fn render(this: &mut MainView, view: &View, cx: &mut Context<MainView>) -> D
                 .child(item(Screen::Today, "Today", cx))
                 .child(item(Screen::DayPlan, "Day Plan", cx))
                 .child(item(Screen::Blocklists, "Blocklists", cx))
-                .child(item(Screen::Devices, "Devices", cx)),
+                .child(item(Screen::WeeklyReview, "Weekly Review", cx))
+                .child(item(Screen::Devices, "Devices", cx))
+                .child(item(Screen::Settings, "Settings", cx)),
         )
         .child(
             div()
