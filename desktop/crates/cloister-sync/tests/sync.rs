@@ -45,6 +45,8 @@ fn start_block(minutes: i64, blocklists: &[&str]) -> Command {
         confirm_long: false,
         client_time: None,
         intent: None,
+        extra_domains: vec![],
+        extra_apps: vec![],
     }
 }
 

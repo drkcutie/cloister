@@ -91,6 +91,8 @@ impl BeginForm {
             confirm_long: self.long_confirmed && self.is_long(),
             client_time: None,
             intent: self.deep.then(|| self.intent.trim().to_string()),
+            extra_domains: vec![],
+            extra_apps: vec![],
         }
     }
 }

@@ -8,6 +8,7 @@
 //! The engine never reads a clock. Any client-supplied time in a command is ignored.
 //! Behaviour is specified by the shared JSON scenarios in `fixtures/rules`.
 
+mod blocklists;
 mod catalog;
 
 use std::collections::BTreeSet;
@@ -15,14 +16,54 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
+pub use blocklists::{
+    distraction_ids_in_force, effective_entries, next_day_boundary, normalize_app,
+    normalize_domain, BlocklistEdits, BlocklistEntry, BlocklistOptOut, BlocklistRemoval, EntryKind,
+    DEFAULT_TIME_ZONE,
+};
 pub use catalog::{related_domains, Blocklist, BlocklistKind, Catalog};
 
 /// Everything the engine knows. Grows as later rules arrive (Day Plans, settings, rituals...).
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct State {
     #[serde(default)]
     pub blocks: Vec<Block>,
+    /// IANA time zone for day boundaries ("tomorrow"). Omitted when UTC.
+    #[serde(
+        default = "default_time_zone",
+        skip_serializing_if = "is_default_time_zone"
+    )]
+    pub time_zone: String,
+    /// Domains and apps the account added to Blocklists, sorted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocklist_entries: Vec<BlocklistEntry>,
+    /// Removals from Blocklists, pending or in force, sorted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocklist_removals: Vec<BlocklistRemoval>,
+    /// Distraction List categories opted out of, pending or in force, sorted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocklist_opt_outs: Vec<BlocklistOptOut>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        State {
+            blocks: Vec::new(),
+            time_zone: default_time_zone(),
+            blocklist_entries: Vec::new(),
+            blocklist_removals: Vec::new(),
+            blocklist_opt_outs: Vec::new(),
+        }
+    }
+}
+
+fn default_time_zone() -> String {
+    DEFAULT_TIME_ZONE.to_string()
+}
+
+fn is_default_time_zone(tz: &String) -> bool {
+    tz == DEFAULT_TIME_ZONE
 }
 
 /// A period during which Blocklists are enforced. Its end can only move later.
@@ -42,6 +83,15 @@ pub struct Block {
     /// How deep the Deep Session was, 1 to 5, recorded once after it ends.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth_rating: Option<u8>,
+    /// Sites added to this Block only, normalized and sorted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_domains: Vec<String>,
+    /// Apps added to this Block only, sorted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_apps: Vec<String>,
+    /// Whether this is the 30-day Quit-Social Block.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub quit_social: bool,
 }
 
 impl Block {
@@ -72,6 +122,12 @@ pub enum Command {
         /// The Deep Session's Intent. Trimmed; blank means none.
         #[serde(default)]
         intent: Option<String>,
+        /// Sites blocked for this Block only.
+        #[serde(default)]
+        extra_domains: Vec<String>,
+        /// Apps blocked for this Block only.
+        #[serde(default)]
+        extra_apps: Vec<String>,
     },
     /// Move the end of an active Block later. Moving it earlier is rejected.
     ExtendBlock {
@@ -85,7 +141,34 @@ pub enum Command {
     CancelBlock { block_id: String },
     /// Record the Depth Rating (1 to 5) of a Deep Session that has ended. Once only.
     RecordDepthRating { block_id: String, rating: u8 },
+    /// Add a domain or app to a Blocklist. Applies immediately.
+    AddBlocklistEntry {
+        blocklist: String,
+        kind: EntryKind,
+        entry: String,
+    },
+    /// Remove a domain or app from a Blocklist. Takes effect at the next day boundary.
+    RemoveBlocklistEntry {
+        blocklist: String,
+        kind: EntryKind,
+        entry: String,
+    },
+    /// Stop including a Distraction List category in new Blocks, from the next day boundary.
+    OptOutOfBlocklist { blocklist: String },
+    /// Include a Distraction List category again. Applies immediately.
+    OptInToBlocklist { blocklist: String },
+    /// Start the 30-day Quit-Social Block (Social only). Needs `confirm_long`.
+    StartQuitSocialBlock {
+        block_id: String,
+        #[serde(default)]
+        confirm_long: bool,
+    },
 }
+
+/// How long the Quit-Social Block lasts: the one exception to the 24-hour cap.
+pub const QUIT_SOCIAL_BLOCK: Duration = Duration::days(30);
+/// The Blocklist the Quit-Social Block covers.
+pub const QUIT_SOCIAL_BLOCKLIST: &str = "social";
 
 fn default_true() -> bool {
     true
@@ -108,6 +191,9 @@ pub enum Reason {
     DeepSessionNotEnded,
     InvalidDepthRating,
     DepthRatingAlreadyRecorded,
+    InvalidEntry,
+    UnknownEntry,
+    CannotOptOut,
 }
 
 impl Reason {
@@ -126,6 +212,9 @@ impl Reason {
             Reason::DeepSessionNotEnded => "deep_session_not_ended",
             Reason::InvalidDepthRating => "invalid_depth_rating",
             Reason::DepthRatingAlreadyRecorded => "depth_rating_already_recorded",
+            Reason::InvalidEntry => "invalid_entry",
+            Reason::UnknownEntry => "unknown_entry",
+            Reason::CannotOptOut => "cannot_opt_out",
         }
     }
 }
@@ -215,16 +304,20 @@ fn apply(state: &State, command: &Command, now: DateTime<Utc>) -> Result<State, 
             confirm_long,
             client_time: _,
             intent,
+            extra_domains,
+            extra_apps,
         } => {
             check_length(Duration::minutes(*minutes), *confirm_long)?;
             let catalog = Catalog::builtin();
             if blocklists.iter().any(|id| catalog.get(id).is_none()) {
                 return Err(Reason::UnknownBlocklist);
             }
+            let extra_domains = blocklists::normalize_all(EntryKind::Domain, extra_domains)?;
+            let extra_apps = blocklists::normalize_all(EntryKind::App, extra_apps)?;
             if state.blocks.iter().any(|b| &b.id == block_id) {
                 return Err(Reason::DuplicateBlock);
             }
-            let mut ids: BTreeSet<String> = catalog.distraction_ids().collect();
+            let mut ids = distraction_ids_in_force(state, now);
             ids.extend(blocklists.iter().cloned());
             next.blocks.push(Block {
                 id: block_id.clone(),
@@ -238,8 +331,46 @@ fn apply(state: &State, command: &Command, now: DateTime<Utc>) -> Result<State, 
                     .filter(|i| !i.is_empty())
                     .map(String::from),
                 depth_rating: None,
+                extra_domains,
+                extra_apps,
+                quit_social: false,
             });
         }
+        Command::StartQuitSocialBlock {
+            block_id,
+            confirm_long,
+        } => {
+            if !confirm_long {
+                return Err(Reason::ConfirmationRequired);
+            }
+            if state.blocks.iter().any(|b| &b.id == block_id) {
+                return Err(Reason::DuplicateBlock);
+            }
+            next.blocks.push(Block {
+                id: block_id.clone(),
+                starts_at: now,
+                ends_at: now + QUIT_SOCIAL_BLOCK,
+                blocklists: vec![QUIT_SOCIAL_BLOCKLIST.to_string()],
+                deep: false,
+                intent: None,
+                depth_rating: None,
+                extra_domains: Vec::new(),
+                extra_apps: Vec::new(),
+                quit_social: true,
+            });
+        }
+        Command::AddBlocklistEntry {
+            blocklist,
+            kind,
+            entry,
+        } => blocklists::add_entry(&mut next, blocklist, *kind, entry)?,
+        Command::RemoveBlocklistEntry {
+            blocklist,
+            kind,
+            entry,
+        } => blocklists::remove_entry(&mut next, blocklist, *kind, entry, now)?,
+        Command::OptOutOfBlocklist { blocklist } => blocklists::opt_out(&mut next, blocklist, now)?,
+        Command::OptInToBlocklist { blocklist } => blocklists::opt_in(&mut next, blocklist)?,
         Command::ExtendBlock {
             block_id,
             ends_at,
@@ -292,18 +423,32 @@ fn find<'a>(state: &'a mut State, block_id: &str) -> Result<&'a mut Block, Reaso
 
 /// What must be enforced at `server_time`, given `state`.
 pub fn enforcement(state: &State, server_time: DateTime<Utc>) -> Enforcement {
-    let catalog = Catalog::builtin();
+    let mut lists = BTreeSet::new();
     let mut domains = BTreeSet::new();
     let mut apps = BTreeSet::new();
     for block in state.blocks.iter().filter(|b| b.is_active(server_time)) {
-        for list in block.blocklists.iter().filter_map(|id| catalog.get(id)) {
-            for domain in &list.domains {
-                domains.insert(domain.clone());
-                domains.extend(related_domains(domain).iter().cloned());
-            }
-            apps.extend(list.apps.iter().cloned());
+        lists.extend(block.blocklists.iter().cloned());
+        // Opting back in to a category applies at once, also to a running Block.
+        if !block.quit_social {
+            lists.extend(distraction_ids_in_force(state, server_time));
         }
+        domains.extend(block.extra_domains.iter().cloned());
+        apps.extend(block.extra_apps.iter().cloned());
     }
+    for list in &lists {
+        domains.extend(effective_entries(
+            state,
+            list,
+            EntryKind::Domain,
+            server_time,
+        ));
+        apps.extend(effective_entries(state, list, EntryKind::App, server_time));
+    }
+    let related: Vec<String> = domains
+        .iter()
+        .flat_map(|d| related_domains(d).iter().cloned())
+        .collect();
+    domains.extend(related);
     Enforcement {
         blocked_domains: domains.into_iter().collect(),
         blocked_apps: apps.into_iter().collect(),

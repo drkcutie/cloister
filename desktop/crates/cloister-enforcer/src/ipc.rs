@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use chrono::{DateTime, Utc};
-use cloister_core::{Block, Command, Enforcement};
+use cloister_core::{Block, BlocklistEdits, Command, Enforcement};
 use serde::{Deserialize, Serialize};
 
 use crate::service::{Clock, Platform, Service};
@@ -27,6 +27,10 @@ pub enum Request {
     /// new Blocks are added, later ends taken, and nothing is shortened or dropped.
     Sync {
         blocks: Vec<Block>,
+        /// The account's Blocklist edits, when the sender knows them. Merged tighten-only
+        /// (see [`cloister_core::State::merge_blocklist_edits`]).
+        #[serde(default)]
+        blocklists: Option<BlocklistEdits>,
     },
     Status,
 }
@@ -44,6 +48,9 @@ pub enum Response {
         server_time: DateTime<Utc>,
         blocks: Vec<Block>,
         enforcement: Enforcement,
+        /// The Blocklist edits the service enforces.
+        #[serde(default)]
+        blocklists: BlocklistEdits,
     },
 }
 

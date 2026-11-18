@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, Utc};
-use cloister_core::{Command, Enforcement};
+use cloister_core::{BlocklistEdits, BlocklistRemoval, Command, Enforcement, EntryKind};
 use cloister_enforcer::dns::SharedDomains;
 use cloister_enforcer::ipc::{self, Request, Response};
 use cloister_enforcer::service::shared_domains;
@@ -99,6 +99,8 @@ fn start_block(minutes: i64) -> Command {
         confirm_long: false,
         client_time: None,
         intent: Some("Write the report".into()),
+        extra_domains: vec![],
+        extra_apps: vec![],
     }
 }
 
@@ -261,11 +263,21 @@ fn synced_block(id: &str, starts: &str, ends: &str) -> cloister_core::Block {
         deep: true,
         intent: None,
         depth_rating: None,
+        extra_domains: vec![],
+        extra_apps: vec![],
+        quit_social: false,
     }
 }
 
 fn sync(r: &Running, blocks: Vec<cloister_core::Block>) -> Response {
-    ipc::send(&r.socket, &Request::Sync { blocks }).unwrap()
+    ipc::send(
+        &r.socket,
+        &Request::Sync {
+            blocks,
+            blocklists: None,
+        },
+    )
+    .unwrap()
 }
 
 #[test]
@@ -321,4 +333,97 @@ fn sync_can_only_tighten() {
             reason: "invalid_block".into()
         }
     );
+}
+
+fn reddit_removal(effective_at: &str) -> BlocklistRemoval {
+    BlocklistRemoval {
+        blocklist: "forums".into(),
+        kind: EntryKind::Domain,
+        entry: "reddit.com".into(),
+        effective_at: effective_at.parse().unwrap(),
+    }
+}
+
+fn blocks(r: &Running, domain: &str) -> bool {
+    r.domains.read().unwrap().is_blocked(domain)
+}
+
+#[test]
+fn blocklist_additions_apply_at_once_over_ipc_but_loosening_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T09:00:00Z");
+    let r = start(&dir, &clock);
+    send(&r, start_block(60));
+    let add = send(
+        &r,
+        Command::AddBlocklistEntry {
+            blocklist: "social".into(),
+            kind: EntryKind::App,
+            entry: "Discord".into(),
+        },
+    );
+    let Response::Accepted { enforcement } = add else {
+        panic!("{add:?}")
+    };
+    assert!(enforcement.blocked_apps.contains(&"Discord".to_string()));
+    for loosening in [
+        Command::RemoveBlocklistEntry {
+            blocklist: "forums".into(),
+            kind: EntryKind::Domain,
+            entry: "reddit.com".into(),
+        },
+        Command::OptOutOfBlocklist {
+            blocklist: "news".into(),
+        },
+    ] {
+        assert_eq!(
+            send(&r, loosening),
+            Response::Rejected {
+                reason: "loosening_not_accepted".into()
+            }
+        );
+    }
+}
+
+#[test]
+fn a_synced_removal_never_takes_effect_before_tomorrow_here() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T23:00:00Z");
+    let r = start(&dir, &clock);
+    send(&r, start_block(120));
+    // A tampered sync claims the removal took effect an hour ago.
+    let answer = ipc::send(
+        &r.socket,
+        &Request::Sync {
+            blocks: vec![],
+            blocklists: Some(BlocklistEdits {
+                removals: vec![reddit_removal("2026-01-05T22:00:00Z")],
+                ..BlocklistEdits::default()
+            }),
+        },
+    )
+    .unwrap();
+    assert!(matches!(answer, Response::Accepted { .. }), "{answer:?}");
+    assert!(blocks(&r, "reddit.com"), "still blocked until midnight");
+    clock.advance(Duration::minutes(60));
+    r.service.lock().unwrap().tick();
+    assert!(!blocks(&r, "reddit.com"), "removed from the next day");
+    assert!(blocks(&r, "youtube.com"));
+}
+
+#[test]
+fn a_synced_quit_social_block_is_kept_for_its_30_days() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::at("2026-01-05T09:00:00Z");
+    let r = start(&dir, &clock);
+    let mut q = synced_block("q1", "2026-01-05T09:00:00Z", "2026-02-04T09:00:00Z");
+    q.blocklists = vec!["social".into()];
+    q.deep = false;
+    q.quit_social = true;
+    let answer = sync(&r, vec![q]);
+    assert!(matches!(answer, Response::Accepted { .. }), "{answer:?}");
+    clock.advance(Duration::days(29));
+    r.service.lock().unwrap().tick();
+    assert!(blocks(&r, "x.com"));
+    assert!(!blocks(&r, "youtube.com"));
 }

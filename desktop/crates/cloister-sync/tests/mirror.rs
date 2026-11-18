@@ -23,6 +23,9 @@ fn block(id: &str, starts: &str, ends: &str) -> Block {
         deep: true,
         intent: None,
         depth_rating: None,
+        extra_domains: vec![],
+        extra_apps: vec![],
+        quit_social: false,
     }
 }
 

@@ -90,6 +90,8 @@ fn run(args: &[String]) -> Result<(), String> {
                 confirm_long: f.confirm_long,
                 client_time: Some(Utc::now()),
                 intent: None,
+                extra_domains: vec![],
+                extra_apps: vec![],
             },
         },
         ["block", "extend"] => Request::Command {
@@ -121,6 +123,7 @@ fn run(args: &[String]) -> Result<(), String> {
             server_time,
             blocks,
             enforcement,
+            ..
         } => {
             let active: Vec<_> = blocks.iter().filter(|b| b.is_active(server_time)).collect();
             if active.is_empty() {
@@ -157,6 +160,9 @@ fn explain(code: &str) -> String {
         "deep_session_not_ended" => "The Deep Session hasn't ended yet. Rate it then.",
         "invalid_depth_rating" => "A Depth Rating is 1 to 5.",
         "depth_rating_already_recorded" => "This Depth Rating is already recorded.",
+        "invalid_entry" => "That isn't a domain (like example.com) or an app name.",
+        "unknown_entry" => "That Blocklist doesn't hold this entry.",
+        "cannot_opt_out" => "Only Distraction List categories can be switched off.",
         _ => "",
     };
     if text.is_empty() {

@@ -1,0 +1,74 @@
+{
+  "name": "quit-social-block",
+  "description": "The Quit-Social Block lasts 30 days and covers only the Social Distraction List: the one exception to the 24-hour cap. It needs the long-Block confirmation and, like any Block, can't be shortened, cancelled or extended past its cap.",
+  "initial_state": { "blocks": [] },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "start_quit_social_block", "block_id": "q1" },
+      "expect": { "outcome": "rejected", "reason": "confirmation_required" }
+    },
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "start_quit_social_block", "block_id": "q1", "confirm_long": true },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "q1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-02-04T09:00:00Z",
+              "blocklists": ["social"],
+              "deep": false,
+              "quit_social": true
+            }
+          ]
+        },
+        "enforcement": {
+          "blocked_domains_include": ["x.com", "twitter.com", "instagram.com", "cdninstagram.com"],
+          "blocked_domains_exclude": ["youtube.com", "reddit.com", "cnn.com"],
+          "blocked_apps": ["com.discord", "com.hnc.Discord"]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:01:00Z",
+      "command": { "type": "start_quit_social_block", "block_id": "q1", "confirm_long": true },
+      "expect": { "outcome": "rejected", "reason": "duplicate_block" }
+    },
+    {
+      "server_time": "2026-01-06T09:00:00Z",
+      "command": { "type": "extend_block", "block_id": "q1", "ends_at": "2026-02-05T09:00:00Z", "confirm_long": true },
+      "expect": { "outcome": "rejected", "reason": "block_too_long" }
+    },
+    {
+      "server_time": "2026-01-06T09:00:00Z",
+      "command": { "type": "extend_block", "block_id": "q1", "ends_at": "2026-02-01T09:00:00Z" },
+      "expect": { "outcome": "rejected", "reason": "block_cannot_be_shortened" }
+    },
+    {
+      "server_time": "2026-01-06T09:00:00Z",
+      "command": { "type": "cancel_block", "block_id": "q1" },
+      "expect": { "outcome": "rejected", "reason": "block_cannot_be_cancelled" }
+    },
+    {
+      "server_time": "2026-01-06T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 43200, "confirm_long": true },
+      "expect": { "outcome": "rejected", "reason": "block_too_long" }
+    },
+    {
+      "server_time": "2026-02-04T08:59:59Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["x.com"], "blocked_domains_exclude": ["youtube.com"] } }
+    },
+    {
+      "server_time": "2026-02-04T09:00:00Z",
+      "expect": { "enforcement": { "blocked_domains": [], "blocked_apps": [] } }
+    },
+    {
+      "server_time": "2026-02-04T09:00:00Z",
+      "command": { "type": "record_depth_rating", "block_id": "q1", "rating": 4 },
+      "expect": { "outcome": "rejected", "reason": "not_a_deep_session" }
+    }
+  ]
+}

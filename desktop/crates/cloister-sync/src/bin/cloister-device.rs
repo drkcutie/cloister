@@ -206,6 +206,7 @@ fn sync(device: &Device, enforcer: Option<&std::path::Path>) -> Result<(), Strin
                 socket,
                 &Request::Sync {
                     blocks: state.blocks.clone(),
+                    blocklists: Some(state.blocklist_edits()),
                 },
             ) {
                 Ok(Response::Accepted { .. }) => {}
@@ -241,6 +242,8 @@ fn start_block(device: &Device, f: &Flags) -> Result<(), String> {
         confirm_long: f.confirm_long,
         client_time: Some(chrono::Utc::now()),
         intent: f.intent.clone(),
+        extra_domains: vec![],
+        extra_apps: vec![],
     };
     match device.send(&command).map_err(|e| e.to_string())? {
         CommandOutcome::Accepted => {

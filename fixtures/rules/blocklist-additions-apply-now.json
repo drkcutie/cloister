@@ -1,0 +1,105 @@
+{
+  "name": "blocklist-additions-apply-now",
+  "description": "Adding a domain or app to a Blocklist applies immediately, including to a Block already running; entries are normalized and invalid ones are rejected.",
+  "initial_state": { "blocks": [] },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 60, "deep": false, "blocklists": ["work"] },
+      "expect": { "outcome": "accepted", "enforcement": { "blocked_domains_exclude": ["figma.com"] } }
+    },
+    {
+      "server_time": "2026-01-05T09:10:00Z",
+      "command": { "type": "add_blocklist_entry", "blocklist": "work", "kind": "domain", "entry": " Figma.com. " },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:00:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video", "work"],
+              "deep": false
+            }
+          ],
+          "blocklist_entries": [{ "blocklist": "work", "kind": "domain", "entry": "figma.com" }]
+        },
+        "enforcement": { "blocked_domains_include": ["figma.com", "github.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:11:00Z",
+      "command": { "type": "add_blocklist_entry", "blocklist": "social", "kind": "app", "entry": " Steam " },
+      "expect": {
+        "outcome": "accepted",
+        "enforcement": {
+          "blocked_apps": ["Steam", "com.Slack", "com.discord", "com.hnc.Discord", "com.microsoft.teams", "com.microsoft.teams2", "com.tinyspeck.slackmacgap"]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:12:00Z",
+      "command": { "type": "add_blocklist_entry", "blocklist": "work", "kind": "domain", "entry": "github.com" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:00:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video", "work"],
+              "deep": false
+            }
+          ],
+          "blocklist_entries": [
+            { "blocklist": "social", "kind": "app", "entry": "Steam" },
+            { "blocklist": "work", "kind": "domain", "entry": "figma.com" }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:13:00Z",
+      "command": { "type": "add_blocklist_entry", "blocklist": "gaming", "kind": "domain", "entry": "steampowered.com" },
+      "expect": { "outcome": "rejected", "reason": "unknown_blocklist" }
+    },
+    {
+      "server_time": "2026-01-05T09:13:00Z",
+      "command": { "type": "add_blocklist_entry", "blocklist": "work", "kind": "domain", "entry": "not a domain" },
+      "expect": { "outcome": "rejected", "reason": "invalid_entry" }
+    },
+    {
+      "server_time": "2026-01-05T09:13:00Z",
+      "command": { "type": "add_blocklist_entry", "blocklist": "work", "kind": "domain", "entry": "localhost" },
+      "expect": { "outcome": "rejected", "reason": "invalid_entry" }
+    },
+    {
+      "server_time": "2026-01-05T09:13:00Z",
+      "command": { "type": "add_blocklist_entry", "blocklist": "work", "kind": "domain", "entry": "-bad.com" },
+      "expect": { "outcome": "rejected", "reason": "invalid_entry" }
+    },
+    {
+      "server_time": "2026-01-05T09:13:00Z",
+      "command": { "type": "add_blocklist_entry", "blocklist": "work", "kind": "app", "entry": "   " },
+      "expect": { "outcome": "rejected", "reason": "invalid_entry" }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "expect": { "enforcement": { "blocked_domains": [], "blocked_apps": [] } }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "start_block", "block_id": "b2", "minutes": 30 },
+      "expect": {
+        "outcome": "accepted",
+        "enforcement": {
+          "blocked_domains_include": ["youtube.com"],
+          "blocked_domains_exclude": ["figma.com", "github.com"],
+          "blocked_apps": ["Steam", "com.discord", "com.hnc.Discord"]
+        }
+      }
+    }
+  ]
+}

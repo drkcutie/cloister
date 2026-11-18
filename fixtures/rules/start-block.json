@@ -22,7 +22,7 @@
         "enforcement": {
           "blocked_domains_include": ["youtube.com", "youtu.be", "googlevideo.com", "reddit.com"],
           "blocked_domains_exclude": ["github.com", "example.com"],
-          "blocked_apps": [],
+          "blocked_apps": ["com.discord", "com.hnc.Discord"],
           "ritual": "none"
         }
       }

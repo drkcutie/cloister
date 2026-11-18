@@ -1,0 +1,64 @@
+{
+  "name": "deep-session-extras",
+  "description": "Extra sites and apps can be added to a single Block when it starts; they are normalized, validated and blocked for that Block only, on top of the Distraction List.",
+  "initial_state": { "blocks": [] },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": {
+        "type": "start_block", "block_id": "b1", "minutes": 60, "intent": "Draft chapter 3",
+        "extra_domains": ["www.Figma.com", "example.com", "Example.com."], "extra_apps": [" Steam ", "Steam"]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T10:00:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true,
+              "intent": "Draft chapter 3",
+              "extra_domains": ["example.com", "www.figma.com"],
+              "extra_apps": ["Steam"]
+            }
+          ]
+        },
+        "enforcement": {
+          "blocked_domains_include": ["example.com", "www.figma.com", "youtube.com"],
+          "blocked_domains_exclude": ["figma.com"],
+          "blocked_apps": ["Steam", "com.discord", "com.hnc.Discord"]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:01:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 30, "extra_domains": ["not a domain"] },
+      "expect": { "outcome": "rejected", "reason": "invalid_entry" }
+    },
+    {
+      "server_time": "2026-01-05T09:01:00Z",
+      "command": { "type": "start_block", "block_id": "b2", "minutes": 30, "extra_apps": [""] },
+      "expect": { "outcome": "rejected", "reason": "invalid_entry" }
+    },
+    {
+      "server_time": "2026-01-05T09:01:00Z",
+      "command": { "type": "start_block", "block_id": "b2", "minutes": 30, "blocklists": ["gaming"], "extra_apps": [""] },
+      "expect": { "outcome": "rejected", "reason": "unknown_blocklist" }
+    },
+    {
+      "server_time": "2026-01-05T09:02:00Z",
+      "command": { "type": "start_block", "block_id": "b2", "minutes": 30, "deep": false, "extra_domains": ["x.com"] },
+      "expect": { "outcome": "accepted", "enforcement": { "blocked_domains_include": ["twitter.com", "example.com"] } }
+    },
+    {
+      "server_time": "2026-01-05T10:00:00Z",
+      "command": { "type": "start_block", "block_id": "b3", "minutes": 30 },
+      "expect": {
+        "outcome": "accepted",
+        "enforcement": { "blocked_domains_exclude": ["example.com", "www.figma.com"], "blocked_apps": ["com.discord", "com.hnc.Discord"] }
+      }
+    }
+  ]
+}

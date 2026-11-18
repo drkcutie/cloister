@@ -1,0 +1,45 @@
+{
+  "name": "blocklist-day-boundary",
+  "description": "The day boundary for loosening changes is the next local midnight in the account's time zone, across daylight-saving changes.",
+  "initial_state": { "blocks": [], "time_zone": "America/New_York" },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "remove_blocklist_entry", "blocklist": "news", "kind": "domain", "entry": "cnn.com" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-06T03:00:00Z",
+      "command": { "type": "remove_blocklist_entry", "blocklist": "news", "kind": "domain", "entry": "bbc.com" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-06T05:30:00Z",
+      "command": { "type": "remove_blocklist_entry", "blocklist": "news", "kind": "domain", "entry": "nytimes.com" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-03-08T03:00:00Z",
+      "command": { "type": "remove_blocklist_entry", "blocklist": "news", "kind": "domain", "entry": "foxnews.com" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-03-08T12:00:00Z",
+      "command": { "type": "opt_out_of_blocklist", "blocklist": "shopping" },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [],
+          "time_zone": "America/New_York",
+          "blocklist_removals": [
+            { "blocklist": "news", "kind": "domain", "entry": "bbc.com", "effective_at": "2026-01-06T05:00:00Z" },
+            { "blocklist": "news", "kind": "domain", "entry": "cnn.com", "effective_at": "2026-01-06T05:00:00Z" },
+            { "blocklist": "news", "kind": "domain", "entry": "foxnews.com", "effective_at": "2026-03-08T05:00:00Z" },
+            { "blocklist": "news", "kind": "domain", "entry": "nytimes.com", "effective_at": "2026-01-07T05:00:00Z" }
+          ],
+          "blocklist_opt_outs": [{ "blocklist": "shopping", "effective_at": "2026-03-09T04:00:00Z" }]
+        }
+      }
+    }
+  ]
+}

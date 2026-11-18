@@ -2,7 +2,7 @@
 //! unprivileged, tested modules ([`crate::hosts`], [`crate::pf`]) or by pure functions here.
 //! Exercised by `scripts/macos/smoke-test.sh` (needs root).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::io::{self, Write};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
@@ -13,7 +13,7 @@ use cloister_core::Enforcement;
 
 use crate::domains::DomainSet;
 use crate::service::Platform;
-use crate::{dns, hosts, pf};
+use crate::{apps, dns, hosts, pf};
 
 pub const LABEL: &str = "com.cloister.enforcer";
 pub const PLIST_PATH: &str = "/Library/LaunchDaemons/com.cloister.enforcer.plist";
@@ -66,6 +66,8 @@ pub struct MacPlatform {
     last_domains: Option<DomainSet>,
     blocked_ips: BTreeSet<Ipv4Addr>,
     resolved_at: Option<Instant>,
+    /// App bundle path -> bundle identifier, read once from its Info.plist.
+    bundle_ids: HashMap<String, Option<String>>,
 }
 
 impl MacPlatform {
@@ -76,6 +78,7 @@ impl MacPlatform {
             last_domains: None,
             blocked_ips: BTreeSet::new(),
             resolved_at: None,
+            bundle_ids: HashMap::new(),
         }
     }
 
@@ -86,6 +89,26 @@ impl MacPlatform {
             if current.trim() != "127.0.0.1" {
                 run("networksetup", &["-setdnsservers", &service, "127.0.0.1"])?;
             }
+        }
+        Ok(())
+    }
+
+    /// Force-quit every running process of a blocked app (decided by [`apps`]).
+    fn quit_blocked_apps(&mut self, blocked: &[String]) -> io::Result<()> {
+        if blocked.is_empty() {
+            return Ok(());
+        }
+        let processes = apps::parse_ps(&run("/bin/ps", &["-axo", "pid=,comm="])?);
+        let cache = &mut self.bundle_ids;
+        let pids = apps::processes_to_quit(&processes, blocked, |path| {
+            cache
+                .entry(path.to_string())
+                .or_insert_with(|| read_bundle_id(path))
+                .clone()
+        });
+        for pid in pids {
+            // SAFETY: plain syscall; a pid that already exited just yields ESRCH.
+            unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
         }
         Ok(())
     }
@@ -127,6 +150,9 @@ impl Platform for MacPlatform {
                 errors.push(format!("hosts: {e}"));
             }
         }
+        if let Err(e) = self.quit_blocked_apps(&enforcement.blocked_apps) {
+            errors.push(format!("apps: {e}"));
+        }
         if changed {
             let _ = run("dscacheutil", &["-flushcache"]);
             let _ = run("killall", &["-HUP", "mDNSResponder"]);
@@ -161,6 +187,17 @@ fn load_pf(rules: &str) -> io::Result<()> {
     // Enable pf; "already enabled" is fine.
     let _ = Command::new("/sbin/pfctl").args(["-q", "-e"]).output();
     Ok(())
+}
+
+fn read_bundle_id(app: &str) -> Option<String> {
+    let plist = format!("{app}/Contents/Info.plist");
+    run(
+        "/usr/bin/plutil",
+        &["-extract", "CFBundleIdentifier", "raw", "-o", "-", &plist],
+    )
+    .ok()
+    .map(|s| s.trim().to_string())
+    .filter(|s| !s.is_empty())
 }
 
 fn run(program: &str, args: &[&str]) -> io::Result<String> {

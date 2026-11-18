@@ -5,7 +5,10 @@ use std::io;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use cloister_core::{decide, enforcement, Block, Command, Enforcement, Outcome, State, MAX_BLOCK};
+use cloister_core::{
+    decide, enforcement, Block, BlocklistEdits, Command, Enforcement, Outcome, State, MAX_BLOCK,
+    QUIT_SOCIAL_BLOCK,
+};
 
 use crate::dns::SharedDomains;
 use crate::domains::DomainSet;
@@ -84,19 +87,23 @@ impl<P: Platform, C: Clock> Service<P, C> {
                 server_time: self.clock.now(),
                 blocks: self.state.blocks.clone(),
                 enforcement: enforcement(&self.state, self.clock.now()),
+                blocklists: self.state.blocklist_edits(),
             },
             Request::Command { command } => self.command(command),
-            Request::Sync { blocks } => self.sync(blocks),
+            Request::Sync { blocks, blocklists } => self.sync(blocks, blocklists),
         }
     }
 
     /// Fold in Blocks from the backend. Only tightens (see [`merge_blocks`]).
-    fn sync(&mut self, blocks: Vec<Block>) -> Response {
-        let Some(merged) = merge_blocks(&self.state, &blocks) else {
+    fn sync(&mut self, blocks: Vec<Block>, blocklists: Option<BlocklistEdits>) -> Response {
+        let Some(mut merged) = merge_blocks(&self.state, &blocks) else {
             return Response::Rejected {
                 reason: INVALID_BLOCK.into(),
             };
         };
+        if let Some(edits) = blocklists {
+            merged.merge_blocklist_edits(&edits, self.clock.now());
+        }
         if merged != self.state {
             if let Err(e) = self.store.save(&merged) {
                 eprintln!("cloisterd: saving state failed: {e}");
@@ -145,18 +152,29 @@ fn tightens(command: &Command) -> bool {
     match command {
         Command::StartBlock { .. }
         | Command::ExtendBlock { .. }
-        | Command::RecordDepthRating { .. } => true,
-        Command::CancelBlock { .. } => false,
+        | Command::RecordDepthRating { .. }
+        | Command::StartQuitSocialBlock { .. }
+        | Command::AddBlocklistEntry { .. }
+        | Command::OptInToBlocklist { .. } => true,
+        Command::CancelBlock { .. }
+        | Command::RemoveBlocklistEntry { .. }
+        | Command::OptOutOfBlocklist { .. } => false,
     }
 }
 
 /// `state` with `incoming` folded in: new Blocks are added and a later end is taken; nothing
-/// is shortened or removed. A known Intent or Depth Rating is kept. `None` if an incoming Block is impossible (empty or over 24 hours).
+/// is shortened or removed. A known Intent or Depth Rating is kept. `None` if an incoming Block
+/// is impossible (empty, or over 24 hours unless it is a 30-day Quit-Social Block).
 pub fn merge_blocks(state: &State, incoming: &[Block]) -> Option<State> {
     let mut next = state.clone();
     for block in incoming {
         let length = block.ends_at - block.starts_at;
-        if length <= chrono::Duration::zero() || length > MAX_BLOCK {
+        let cap = if block.quit_social {
+            QUIT_SOCIAL_BLOCK
+        } else {
+            MAX_BLOCK
+        };
+        if length <= chrono::Duration::zero() || length > cap {
             return None;
         }
         match next.blocks.iter_mut().find(|b| b.id == block.id) {

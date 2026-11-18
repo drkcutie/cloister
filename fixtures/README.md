@@ -90,6 +90,21 @@ A blocked domain always covers its subdomains, so `youtube.com` in the set block
 
 `blocklists` is sorted. Blocks are kept after they end (they are history, and later rules need them).
 
+A Block may also have `extra_domains` and `extra_apps` (sorted; omitted when empty) and `quit_social: true`
+(omitted when false). The state may also have (each omitted when empty / UTC):
+
+```json
+{
+  "time_zone": "America/New_York",
+  "blocklist_entries": [{ "blocklist": "work", "kind": "domain", "entry": "figma.com" }],
+  "blocklist_removals": [{ "blocklist": "forums", "kind": "domain", "entry": "reddit.com", "effective_at": "2026-01-06T05:00:00Z" }],
+  "blocklist_opt_outs": [{ "blocklist": "news", "effective_at": "2026-01-06T05:00:00Z" }]
+}
+```
+
+Entries and removals are sorted by `(blocklist, kind, entry)` in byte order (`app` before `domain`), opt-outs by
+`blocklist`. Removals and opt-outs stay after they take effect; adding the entry again (or opting in) deletes them.
+
 **Commands** (`type` selects the command; unknown fields are errors)
 
 | `type` | Fields | Notes |
@@ -98,6 +113,22 @@ A blocked domain always covers its subdomains, so `youtube.com` in the set block
 | `extend_block` | `block_id`, `ends_at` | Moves the end of an active Block later. The 24-hour cap still applies to the whole Block. |
 | `cancel_block` | `block_id` | Always rejected: a Block can't be cancelled. |
 | `record_depth_rating` | `block_id`, `rating` | Records a Deep Session's Depth Rating (1 to 5), once, at or after its end. |
+| `add_blocklist_entry` | `blocklist`, `kind` (`domain` or `app`), `entry` | Adds to a Blocklist. Applies immediately, also to running Blocks. Cancels a removal of the same entry. Adding an entry already listed changes nothing. |
+| `remove_blocklist_entry` | `blocklist`, `kind`, `entry` | Stores a removal that takes effect at the next day boundary. Removing an entry whose removal is pending changes nothing (the date stays). |
+| `opt_out_of_blocklist` | `blocklist` | Distraction List categories only. From the next day boundary, new Blocks leave the category out. A running Block keeps it. |
+| `opt_in_to_blocklist` | `blocklist` | Drops an opt-out, pending or in force. Applies immediately, also to running Blocks. |
+| `start_quit_social_block` | `block_id`, `confirm_long` (default `false`, must be `true`) | A 30-day plain Block of the Social list only (`quit_social: true`): the one exception to the 24-hour cap. Can't be extended (any end past 24 hours is `block_too_long`). |
+
+`start_block` also takes `extra_domains` and `extra_apps` (default `[]`): sites and apps blocked for that Block only.
+Domains are trimmed, lower-cased and lose a trailing dot; they need two or more labels of `a-z`, `0-9` and inner `-`
+(at most 63 characters each, 253 in all). Apps are trimmed and 1 to 200 characters. Extras are deduplicated and sorted.
+
+**Day boundary.** A loosening change made at server time `t` takes effect at the first local midnight after `t` in
+the state's `time_zone` (IANA, default `UTC`). A midnight skipped by a clock change maps to the first instant after it.
+
+**What a Block enforces.** For each active Block: its `blocklists`, plus (unless it is the Quit-Social Block) every
+Distraction List category not opted out at that moment, plus its extras. For each of those Blocklists: the built-in
+entries and `blocklist_entries`, minus removals whose `effective_at` has passed. Then related domains are added.
 
 **Rejection reasons** (stable codes; UI copy is mapped from these, never shown raw)
 
@@ -116,6 +147,9 @@ A blocked domain always covers its subdomains, so `youtube.com` in the set block
 | `deep_session_not_ended` | `record_depth_rating` before the Deep Session's end. |
 | `invalid_depth_rating` | `rating` is outside 1 to 5. |
 | `depth_rating_already_recorded` | The Deep Session already has a Depth Rating. |
+| `invalid_entry` | A Blocklist entry or a Block extra isn't a valid domain or app. Checked after `unknown_blocklist`, before `duplicate_block` / `unknown_entry`. |
+| `unknown_entry` | `remove_blocklist_entry` of an entry the Blocklist doesn't hold now (never listed, or already removed). |
+| `cannot_opt_out` | `opt_out_of_blocklist` of a Blocklist that isn't a Distraction List category (the Work List). |
 
 ## Adding a scenario
 

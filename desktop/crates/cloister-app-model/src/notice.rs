@@ -59,6 +59,9 @@ impl Notice {
             "invalid_length" => "Choose a length.".into(),
             "depth_rating_already_recorded" => "This Depth Rating is already recorded.".into(),
             "storage_unavailable" => "The Block wasn't saved, so it hasn't started.".into(),
+            "invalid_entry" => "Enter a domain, like example.com, or an app name.".into(),
+            "unknown_entry" => "That Blocklist doesn't hold this entry.".into(),
+            "cannot_opt_out" => "The Work List can be edited, not switched off.".into(),
             _ => "Not accepted. Nothing has changed.".into(),
         })
     }
