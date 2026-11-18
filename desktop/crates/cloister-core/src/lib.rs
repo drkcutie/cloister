@@ -11,6 +11,7 @@
 mod blocklists;
 mod catalog;
 mod day_plan;
+mod settings;
 
 use std::collections::BTreeSet;
 
@@ -26,6 +27,10 @@ pub use catalog::{related_domains, Blocklist, BlocklistKind, Catalog};
 pub use day_plan::{
     day_plan, planned_deep_minutes, planned_deep_sessions, schedule_plan, DayPlan, Schedule,
     ScheduleSlot, Slot, SlotInput,
+};
+pub use settings::{
+    lockdown, next_workday_start, settings_at, workday, Lockdown, PendingSettings, Settings,
+    Workday,
 };
 
 /// Everything the engine knows. Grows as later rules arrive (Day Plans, settings, rituals...).
@@ -55,6 +60,13 @@ pub struct State {
     /// Distraction List categories opted out of, pending or in force, sorted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocklist_opt_outs: Vec<BlocklistOptOut>,
+    /// Workdays, Workday Start and Shutdown Time in force (as of the last change). Omitted
+    /// until first set; without them there is no Evening Lockdown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<Settings>,
+    /// Requested settings that loosen something, waiting for the next day boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_settings: Option<PendingSettings>,
 }
 
 impl Default for State {
@@ -67,6 +79,8 @@ impl Default for State {
             blocklist_entries: Vec::new(),
             blocklist_removals: Vec::new(),
             blocklist_opt_outs: Vec::new(),
+            settings: None,
+            pending_settings: None,
         }
     }
 }
@@ -193,6 +207,16 @@ pub enum Command {
         ends: String,
         slots: Vec<ScheduleSlot>,
     },
+    /// Set Workdays (ISO 1-7), Workday Start and Shutdown Time ("HH:MM", local). What
+    /// tightens applies now, what loosens from the next day boundary. `time_zone` (IANA) is
+    /// taken with the first settings only.
+    ChangeSettings {
+        workdays: Vec<u8>,
+        workday_start: String,
+        shutdown_time: String,
+        #[serde(default)]
+        time_zone: Option<String>,
+    },
 }
 
 /// How long the Quit-Social Block lasts: the one exception to the 24-hour cap.
@@ -234,6 +258,10 @@ pub enum Reason {
     InvalidSchedule,
     UnknownTimeZone,
     SchedulesOverlap,
+    EveningLockdown,
+    RestDay,
+    InvalidSettings,
+    TimeZoneCannotChange,
 }
 
 impl Reason {
@@ -265,6 +293,10 @@ impl Reason {
             Reason::InvalidSchedule => "invalid_schedule",
             Reason::UnknownTimeZone => "unknown_time_zone",
             Reason::SchedulesOverlap => "schedules_overlap",
+            Reason::EveningLockdown => "evening_lockdown",
+            Reason::RestDay => "rest_day",
+            Reason::InvalidSettings => "invalid_settings",
+            Reason::TimeZoneCannotChange => "time_zone_cannot_change",
         }
     }
 }
@@ -366,6 +398,11 @@ fn apply(state: &State, command: &Command, now: DateTime<Utc>) -> Result<State, 
             let extra_apps = blocklists::normalize_all(EntryKind::App, extra_apps)?;
             if state.blocks.iter().any(|b| &b.id == block_id) || is_slot_id(state, block_id) {
                 return Err(Reason::DuplicateBlock);
+            }
+            if *deep {
+                if let Some(lockdown) = lockdown(state, now) {
+                    return Err(lockdown.reason());
+                }
             }
             let mut ids = distraction_ids_in_force(state, now);
             ids.extend(blocklists.iter().cloned());
@@ -489,6 +526,19 @@ fn apply(state: &State, command: &Command, now: DateTime<Utc>) -> Result<State, 
             slots,
             now,
         )?,
+        Command::ChangeSettings {
+            workdays,
+            workday_start,
+            shutdown_time,
+            time_zone,
+        } => settings::change_settings(
+            &mut next,
+            workdays,
+            workday_start,
+            shutdown_time,
+            time_zone.as_deref(),
+            now,
+        )?,
     }
     Ok(next)
 }
@@ -528,6 +578,11 @@ pub fn enforcement(state: &State, server_time: DateTime<Utc>) -> Enforcement {
         }
         domains.extend(block.extra_domains.iter().cloned());
         apps.extend(block.extra_apps.iter().cloned());
+    }
+    // Evening Lockdown and Rest Days: the Work List and the Distraction List, on the clock.
+    if lockdown(state, server_time).is_some() {
+        lists.extend(Catalog::builtin().work_ids());
+        lists.extend(distraction_ids_in_force(state, server_time));
     }
     for list in &lists {
         domains.extend(effective_entries(

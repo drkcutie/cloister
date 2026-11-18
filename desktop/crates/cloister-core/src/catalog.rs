@@ -47,6 +47,14 @@ impl Catalog {
             .filter(|b| b.kind == BlocklistKind::Distraction)
             .map(|b| b.id.clone())
     }
+
+    /// Ids of the Work List's Blocklists.
+    pub fn work_ids(&self) -> impl Iterator<Item = String> + '_ {
+        self.blocklists
+            .iter()
+            .filter(|b| b.kind == BlocklistKind::Work)
+            .map(|b| b.id.clone())
+    }
 }
 
 /// Domains that must be blocked together with `domain` (e.g. `youtube.com` -> `youtu.be`).

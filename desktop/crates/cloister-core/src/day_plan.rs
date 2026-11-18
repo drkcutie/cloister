@@ -17,7 +17,8 @@ use serde::{Deserialize, Serialize};
 use crate::{Block, Catalog, Reason, State};
 
 /// One day divided into Slots. `starts_at`/`ends_at` are the Workday's bounds (Workday Start
-/// to Shutdown Time); until those settings exist (ticket #8) they come with the plan.
+/// to Shutdown Time). Once settings exist they must match them; before that they come with
+/// the plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DayPlan {
@@ -172,7 +173,7 @@ fn schedule_plan_of(schedule: &Schedule, date: NaiveDate) -> Option<DayPlan> {
 
 /// Local wall time to UTC. An ambiguous time takes the earlier instant; a time skipped by a
 /// clock change moves an hour later.
-fn local(tz: Tz, date: NaiveDate, time: NaiveTime) -> Option<DateTime<Utc>> {
+pub(crate) fn local(tz: Tz, date: NaiveDate, time: NaiveTime) -> Option<DateTime<Utc>> {
     let naive = date.and_time(time);
     tz.from_local_datetime(&naive)
         .earliest()
@@ -184,7 +185,7 @@ fn local(tz: Tz, date: NaiveDate, time: NaiveTime) -> Option<DateTime<Utc>> {
 }
 
 /// Strict "HH:MM", 00:00 to 23:59.
-fn parse_hhmm(s: &str) -> Option<NaiveTime> {
+pub(crate) fn parse_hhmm(s: &str) -> Option<NaiveTime> {
     let b = s.as_bytes();
     if b.len() != 5
         || b[2] != b':'
@@ -253,6 +254,16 @@ pub(crate) fn write_day_plan(
     input: &[SlotInput],
     now: DateTime<Utc>,
 ) -> Result<(), Reason> {
+    // With settings, the plan runs from that day's Workday Start to its Shutdown Time.
+    match crate::workday(state, date, now) {
+        crate::Workday::NotConfigured => {}
+        crate::Workday::RestDay => return Err(Reason::RestDay),
+        crate::Workday::Bounds(start, end) => {
+            if (starts_at, ends_at) != (start, end) {
+                return Err(Reason::InvalidDayPlan);
+            }
+        }
+    }
     if ends_at <= starts_at || ends_at - starts_at > MAX_DAY {
         return Err(Reason::InvalidDayPlan);
     }

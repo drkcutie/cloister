@@ -119,8 +119,8 @@ A blocked domain always covers its subdomains, so `youtube.com` in the set block
 
 - Day Plans are sorted by `date`, their Slots by start; Schedules by `id`, their Slots by start
   and `weekdays` ascending (ISO: 1 = Monday ... 7 = Sunday). Labels are trimmed.
-- A Day Plan's `starts_at`/`ends_at` are the Workday's bounds. Until Workday Start and Shutdown
-  Time exist as settings they are given with the plan.
+- A Day Plan's `starts_at`/`ends_at` are the Workday's bounds. Without settings they are given with the
+  plan; with settings they must match them (see **Settings and Evening Lockdown**).
 - `planned_deep_minutes` is the total length of the deep Slots, in minutes.
 - A deep Slot **is** a Deep Session from its start to its end: it blocks the Distraction List
   (like a deep Block with no extra Blocklists) and takes a Depth Rating by its Slot id. It is
@@ -144,6 +144,20 @@ A Block may also have `extra_domains` and `extra_apps` (sorted; omitted when emp
 }
 ```
 
+**Settings** (each omitted until first set):
+
+```json
+{
+  "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" },
+  "pending_settings": { "workdays": [1, 2, 3, 4, 5, 6], "workday_start": "08:00", "shutdown_time": "17:00",
+                        "effective_at": "2026-01-07T05:00:00Z" }
+}
+```
+
+`workdays` are ISO weekdays, sorted; times are local `HH:MM` in the state's `time_zone`. `settings` are the ones
+in force as of the last `change_settings`; `pending_settings`, once `effective_at` has passed, replace them (an
+engine computes this from the time; nothing rewrites the state until the next `change_settings`).
+
 Entries and removals are sorted by `(blocklist, kind, entry)` in byte order (`app` before `domain`), opt-outs by
 `blocklist`. Removals and opt-outs stay after they take effect; adding the entry again (or opting in) deletes them.
 
@@ -161,6 +175,7 @@ Entries and removals are sorted by `(blocklist, kind, entry)` in byte order (`ap
 | `remove_blocklist_entry` | `blocklist`, `kind`, `entry` | Stores a removal that takes effect at the next day boundary. Removing an entry whose removal is pending changes nothing (the date stays). |
 | `opt_out_of_blocklist` | `blocklist` | Distraction List categories only. From the next day boundary, new Blocks leave the category out. A running Block keeps it. |
 | `opt_in_to_blocklist` | `blocklist` | Drops an opt-out, pending or in force. Applies immediately, also to running Blocks. |
+| `change_settings` | `workdays`, `workday_start`, `shutdown_time`, `time_zone` (optional) | See **Settings and Evening Lockdown** below. |
 | `start_quit_social_block` | `block_id`, `confirm_long` (default `false`, must be `true`) | A 30-day plain Block of the Social list only (`quit_social: true`): the one exception to the 24-hour cap. Can't be extended (any end past 24 hours is `block_too_long`). |
 
 `start_block` also takes `extra_domains` and `extra_apps` (default `[]`): sites and apps blocked for that Block only.
@@ -174,6 +189,24 @@ the state's `time_zone` (IANA, default `UTC`). A midnight skipped by a clock cha
 Distraction List category not opted out at that moment, plus its extras. For each of those Blocklists: the built-in
 entries and `blocklist_entries`, minus removals whose `effective_at` has passed. Then related domains are added. A running deep Slot counts as a
 deep Block started at the Slot's start: the categories not opted out then (and, like any Block, those not opted out now).
+
+**Settings and Evening Lockdown.** `change_settings` first works out the settings in force now (the pending ones
+if their `effective_at` has passed). Without any, the requested settings apply at once. Otherwise the new
+`settings` are the stricter of the two field by field: Workdays in both, the later Workday Start, the earlier
+Shutdown Time (this may leave a Workday with no working time; that is allowed). If that differs from the
+request, the request becomes `pending_settings` from the next day boundary (replacing any earlier pending ones);
+otherwise there are no pending settings. `time_zone` is taken only while no settings exist; after that a
+different one is `time_zone_cannot_change`.
+
+With settings in force at time `t`, local to `time_zone`: if the date isn't a Workday it is a **Rest Day**;
+else, before Workday Start or from Shutdown Time on, it is **Evening Lockdown**. During either, every Blocklist of
+kind `work` and every Distraction List category in force are enforced (as if a Block held them), and
+`start_block` with `deep: true` is rejected (`rest_day` or `evening_lockdown`; checked after `duplicate_block`).
+A plain Block still starts. Deep Slots and running Blocks are untouched.
+
+With settings, `write_day_plan` for a Rest Day is `rest_day`, and its `starts_at`/`ends_at` must equal that
+date's Workday Start and Shutdown Time (else `invalid_day_plan`), using the settings in force at the later of
+server time and the date's local midnight. These checks come before the other Day Plan checks.
 
 **The ratchet** (`write_day_plan`). The plan in force for the date is the saved one, or the
 Schedule's once its `starts_at` has passed (before that the Schedule is only a draft). Against
@@ -212,7 +245,12 @@ unchanged deep Slot (`slot_in_the_past`); Planned Deep Minutes must not go down
 | `invalid_schedule` | Weekdays outside 1 to 7 or repeated, `starts`/`ends` not `HH:MM` (00:00 to 23:59), or the day ends at or before its start. |
 | `unknown_time_zone` | `time_zone` isn't an IANA time zone. |
 | `schedules_overlap` | Another Schedule already covers one of the weekdays. |
+| `evening_lockdown` | `start_block` of a Deep Session during Evening Lockdown. |
+| `rest_day` | `start_block` of a Deep Session on a Rest Day, or `write_day_plan` for a Rest Day. |
+| `invalid_settings` | Workdays outside 1 to 7 or repeated, a time that isn't `HH:MM`, or Workday Start not before Shutdown Time. |
+| `time_zone_cannot_change` | `change_settings` with a different `time_zone` once settings exist. |
 
+`change_settings` checks: time zone known, then the settings' shape, then a time zone change.
 Checks run in this order: day bounds, Slots, overlap, ids, then the ratchet; for Schedules:
 time zone, weekdays and times, Slots, overlap, other Schedules.
 

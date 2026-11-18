@@ -1,0 +1,47 @@
+{
+  "name": "day-plan-workday-bounds",
+  "description": "Once Workdays, Workday Start and Shutdown Time are set, a Day Plan runs exactly from that date's Workday Start to its Shutdown Time (using settings that take effect by then), and a Rest Day has no Day Plan.",
+  "initial_state": {
+    "blocks": [],
+    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" }
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": { "type": "write_day_plan", "date": "2026-01-05", "starts_at": "2026-01-05T08:00:00Z", "ends_at": "2026-01-05T17:00:00Z", "slots": [] },
+      "expect": { "outcome": "rejected", "reason": "invalid_day_plan" }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": { "type": "write_day_plan", "date": "2026-01-10", "starts_at": "2026-01-10T09:00:00Z", "ends_at": "2026-01-10T17:00:00Z", "slots": [] },
+      "expect": { "outcome": "rejected", "reason": "rest_day" }
+    },
+    {
+      "server_time": "2026-01-04T20:00:00Z",
+      "command": {
+        "type": "write_day_plan", "date": "2026-01-05", "starts_at": "2026-01-05T09:00:00Z", "ends_at": "2026-01-05T17:00:00Z",
+        "slots": [{ "id": "s1", "starts_at": "2026-01-05T09:00:00Z", "ends_at": "2026-01-05T11:00:00Z", "label": "Draft chapter 3", "deep": true }]
+      },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-04T21:00:00Z",
+      "command": { "type": "change_settings", "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "18:00" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-04T21:30:00Z",
+      "command": { "type": "write_day_plan", "date": "2026-01-06", "starts_at": "2026-01-06T09:00:00Z", "ends_at": "2026-01-06T17:00:00Z", "slots": [] },
+      "expect": { "outcome": "rejected", "reason": "invalid_day_plan" }
+    },
+    {
+      "server_time": "2026-01-04T21:30:00Z",
+      "command": { "type": "write_day_plan", "date": "2026-01-06", "starts_at": "2026-01-06T09:00:00Z", "ends_at": "2026-01-06T18:00:00Z", "slots": [] },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-05T09:30:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["youtube.com"], "blocked_domains_exclude": ["github.com"] } }
+    }
+  ]
+}

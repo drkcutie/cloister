@@ -160,7 +160,10 @@ fn tightens(command: &Command) -> bool {
         | Command::RemoveBlocklistEntry { .. }
         | Command::OptOutOfBlocklist { .. } => false,
         // Moving a deep Slot or changing a Schedule can loosen today: the backend decides.
-        Command::WriteDayPlan { .. } | Command::PutSchedule { .. } => false,
+        // Settings can loosen tomorrow; the backend decides and the Sync hands them over.
+        Command::WriteDayPlan { .. }
+        | Command::PutSchedule { .. }
+        | Command::ChangeSettings { .. } => false,
     }
 }
 

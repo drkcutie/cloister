@@ -1,0 +1,59 @@
+{
+  "name": "no-deep-session-in-lockdown",
+  "description": "No Deep Session can start during Evening Lockdown or on a Rest Day; a plain Block still can, because it only tightens.",
+  "initial_state": {
+    "blocks": [],
+    "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" }
+  },
+  "steps": [
+    {
+      "server_time": "2026-01-05T17:00:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 60, "intent": "One more thing" },
+      "expect": { "outcome": "rejected", "reason": "evening_lockdown" }
+    },
+    {
+      "server_time": "2026-01-06T08:30:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 60 },
+      "expect": { "outcome": "rejected", "reason": "evening_lockdown" }
+    },
+    {
+      "server_time": "2026-01-10T12:00:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 60 },
+      "expect": { "outcome": "rejected", "reason": "rest_day" }
+    },
+    {
+      "server_time": "2026-01-10T12:00:00Z",
+      "command": { "type": "start_block", "block_id": "b2", "minutes": 120, "deep": false, "extra_domains": ["example.com"] },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            { "id": "b2", "starts_at": "2026-01-10T12:00:00Z", "ends_at": "2026-01-10T14:00:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"], "deep": false, "extra_domains": ["example.com"] }
+          ],
+          "settings": { "workdays": [1, 2, 3, 4, 5], "workday_start": "09:00", "shutdown_time": "17:00" }
+        },
+        "enforcement": { "blocked_domains_include": ["github.com", "example.com", "youtube.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-12T08:59:00Z",
+      "command": { "type": "start_block", "block_id": "b3", "minutes": 0 },
+      "expect": { "outcome": "rejected", "reason": "invalid_length" }
+    },
+    {
+      "server_time": "2026-01-12T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b3", "minutes": 90, "intent": "Draft chapter 3" },
+      "expect": { "outcome": "accepted", "enforcement": { "blocked_domains_include": ["youtube.com"], "blocked_domains_exclude": ["github.com"] } }
+    },
+    {
+      "server_time": "2026-01-12T16:30:00Z",
+      "command": { "type": "start_block", "block_id": "b4", "minutes": 90, "intent": "Runs past Shutdown Time" },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-12T17:30:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["github.com", "youtube.com"] } }
+    }
+  ]
+}
