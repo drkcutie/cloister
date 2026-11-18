@@ -6,6 +6,7 @@
 //! refusals into calm copy.
 
 mod begin;
+mod day_plan;
 mod enforcer;
 pub mod format;
 mod hold;
@@ -13,6 +14,7 @@ mod notice;
 mod today;
 
 pub use begin::{BeginForm, Length, Missing};
+pub use day_plan::{DayPlanEditor, EditorSlot, PlanBackend, DEFAULT_WORKDAY, STEP_MINUTES};
 pub use enforcer::{Enforcer, SocketEnforcer};
 pub use format::Zone;
 pub use hold::Hold;

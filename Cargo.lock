@@ -915,6 +915,7 @@ dependencies = [
  "chrono",
  "cloister-core",
  "cloister-enforcer",
+ "cloister-sync",
  "tempfile",
 ]
 
