@@ -1,0 +1,53 @@
+{
+  "name": "block-blocklists",
+  "description": "Every Block, deep or plain, covers the whole Distraction List; extra Blocklists add to it; unknown Blocklists and reused ids are rejected.",
+  "initial_state": { "blocks": [] },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 30, "deep": false, "blocklists": ["work"] },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-05T09:30:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video", "work"],
+              "deep": false
+            }
+          ]
+        },
+        "enforcement": { "blocked_domains_include": ["github.com", "slack.com", "youtube.com", "news.ycombinator.com"] }
+      }
+    },
+    {
+      "server_time": "2026-01-05T09:01:00Z",
+      "command": { "type": "start_block", "block_id": "b2", "minutes": 30, "blocklists": ["gaming"] },
+      "expect": { "outcome": "rejected", "reason": "unknown_blocklist" }
+    },
+    {
+      "server_time": "2026-01-05T09:01:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 90 },
+      "expect": { "outcome": "rejected", "reason": "duplicate_block" }
+    },
+    {
+      "server_time": "2026-01-05T09:02:00Z",
+      "command": { "type": "start_block", "block_id": "b3", "minutes": 10 },
+      "expect": { "outcome": "accepted" }
+    },
+    {
+      "server_time": "2026-01-05T09:20:00Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["github.com", "youtube.com"] } }
+    },
+    {
+      "server_time": "2026-01-05T09:20:00Z",
+      "expect": { "enforcement": { "blocked_domains_exclude": ["example.com", "google.com", "googleapis.com"] } }
+    },
+    {
+      "server_time": "2026-01-05T09:30:00Z",
+      "expect": { "enforcement": { "blocked_domains": [] } }
+    }
+  ]
+}

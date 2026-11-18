@@ -1,0 +1,54 @@
+{
+  "name": "block-24h-cap",
+  "description": "A Block is at most 24 hours long, whether started that long or extended to it, and must be longer than zero.",
+  "initial_state": { "blocks": [] },
+  "steps": [
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b0", "minutes": 0 },
+      "expect": { "outcome": "rejected", "reason": "invalid_length" }
+    },
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b0", "minutes": -30 },
+      "expect": { "outcome": "rejected", "reason": "invalid_length" }
+    },
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 1441, "confirm_long": true },
+      "expect": { "outcome": "rejected", "reason": "block_too_long", "state": { "blocks": [] } }
+    },
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 1441 },
+      "expect": { "outcome": "rejected", "reason": "block_too_long" }
+    },
+    {
+      "server_time": "2026-01-05T09:00:00Z",
+      "command": { "type": "start_block", "block_id": "b1", "minutes": 1440, "confirm_long": true },
+      "expect": {
+        "outcome": "accepted",
+        "state": {
+          "blocks": [
+            {
+              "id": "b1",
+              "starts_at": "2026-01-05T09:00:00Z",
+              "ends_at": "2026-01-06T09:00:00Z",
+              "blocklists": ["forums", "news", "shopping", "social", "video"],
+              "deep": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "server_time": "2026-01-05T12:00:00Z",
+      "command": { "type": "extend_block", "block_id": "b1", "ends_at": "2026-01-06T09:01:00Z", "confirm_long": true },
+      "expect": { "outcome": "rejected", "reason": "block_too_long" }
+    },
+    {
+      "server_time": "2026-01-06T08:59:59Z",
+      "expect": { "enforcement": { "blocked_domains_include": ["youtube.com"] } }
+    }
+  ]
+}
